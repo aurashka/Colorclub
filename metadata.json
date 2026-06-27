@@ -1,0 +1,6 @@
+{
+  "name": "Color Prediction App",
+  "description": "A real-time color prediction gaming app with bidding, deposit and withdrawal tracking, and a comprehensive admin panel for request approval/rejection/hold management, synchronized timers, and results manipulation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
