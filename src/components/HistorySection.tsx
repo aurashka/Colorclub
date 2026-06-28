@@ -45,13 +45,6 @@ export default function HistorySection({ roomId, history }: HistorySectionProps)
     return 'bg-slate-600 text-white';
   };
 
-  const getNumberColorClass = (num: number) => {
-    if (num === 0) return 'text-violet-400 bg-violet-500/10 border-violet-500/20';
-    if (num === 5) return 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20';
-    if ([1, 3, 7, 9].includes(num)) return 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20';
-    return 'text-rose-400 bg-rose-500/10 border-rose-500/20';
-  };
-
   const getCircleGradient = (color: string) => {
     if (color === 'green') return 'bg-emerald-600';
     if (color === 'red') return 'bg-rose-600';
@@ -144,10 +137,10 @@ export default function HistorySection({ roomId, history }: HistorySectionProps)
           <table className="min-w-full divide-y divide-slate-800 text-left">
             <thead className="bg-slate-900/60 text-[10px] text-slate-400 uppercase tracking-widest font-bold font-mono">
               <tr>
-                <th className="px-6 py-4">Period ID</th>
-                <th className="px-6 py-4 text-center">Number</th>
+                <th className="px-6 py-4">Period ({roomId === '30s' ? '30 Sec' : roomId === '1m' ? '1 Min' : '3 Min'})</th>
+                <th className="px-6 py-4 text-center">Numberball with color</th>
                 <th className="px-6 py-4">Color Outcome</th>
-                <th className="px-6 py-4">Landing Time</th>
+                <th className="px-6 py-4">Big/Small</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800 text-xs text-slate-300">
@@ -155,7 +148,7 @@ export default function HistorySection({ roomId, history }: HistorySectionProps)
                 <tr key={item.periodId} className="hover:bg-slate-800/30 transition-colors">
                   <td className="px-6 py-4 font-bold font-mono text-slate-200">{item.periodId}</td>
                   <td className="px-6 py-4 text-center">
-                    <span className={`inline-flex items-center justify-center h-8 w-8 rounded-full font-black border font-mono ${getNumberColorClass(item.number)}`}>
+                    <span className={`inline-flex items-center justify-center h-8 w-8 rounded-full font-black text-white text-sm shadow-md ${getCircleGradient(item.color)}`}>
                       {item.number}
                     </span>
                   </td>
@@ -164,8 +157,14 @@ export default function HistorySection({ roomId, history }: HistorySectionProps)
                       {item.premiumColor}
                     </span>
                   </td>
-                  <td className="px-6 py-4 text-xs font-mono text-slate-500">
-                    {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                  <td className="px-6 py-4">
+                    <span className={`inline-block px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wide ${
+                      item.number >= 5 
+                        ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' 
+                        : 'bg-sky-500/10 text-sky-400 border border-sky-500/20'
+                    }`}>
+                      {item.number >= 5 ? 'Big' : 'Small'}
+                    </span>
                   </td>
                 </tr>
               ))}

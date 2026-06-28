@@ -23,8 +23,19 @@ export function getPeriodDetails(roomId: RoomType): {
   const nowSec = Math.floor(Date.now() / 1000);
   const secondsIntoDay = nowSec % 86400;
   
-  const totalDuration = roomId === 'parity' ? 60 : 180;
-  const lockTime = roomId === 'parity' ? 10 : 30; // 10s for 1 min, 30s for 3 min
+  let totalDuration = 60;
+  let lockTime = 15;
+  
+  if (roomId === '30s') {
+    totalDuration = 30;
+    lockTime = 15;
+  } else if (roomId === '1m') {
+    totalDuration = 60;
+    lockTime = 15;
+  } else if (roomId === '3m') {
+    totalDuration = 180;
+    lockTime = 15;
+  }
   
   const periodIndex = Math.floor(secondsIntoDay / totalDuration) + 1;
   const timeLeft = totalDuration - (secondsIntoDay % totalDuration);
@@ -37,8 +48,7 @@ export function getPeriodDetails(roomId: RoomType): {
   const day = String(dateObj.getUTCDate()).padStart(2, '0');
   const dateStr = `${year}${month}${day}`;
   
-  const padLength = roomId === 'parity' ? 4 : 3;
-  const periodId = `${dateStr}${String(periodIndex).padStart(padLength, '0')}`;
+  const periodId = `${dateStr}${String(periodIndex).padStart(4, '0')}`;
   
   return {
     periodId,
@@ -115,3 +125,97 @@ export function calculateBidResult(
   
   return { status: 'lost', winAmount: 0 };
 }
+
+// 32-bit FNV-1a hash combined with a Murmur3-like finalizer to get a high-quality deterministic pseudo-random index (0-9)
+export function getDeterministicNumber(periodId: string, roomId: string): number {
+  const str = `${periodId}_${roomId}_prism_secret_salt_928374`;
+  let hash = 2166136261;
+  for (let i = 0; i < str.length; i++) {
+    hash ^= str.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  
+  let uHash = hash >>> 0;
+  uHash = Math.imul(uHash ^ (uHash >>> 15), 2246822507) >>> 0;
+  uHash = Math.imul(uHash ^ (uHash >>> 13), 3266489909) >>> 0;
+  uHash = (uHash ^ (uHash >>> 16)) >>> 0;
+  
+  return uHash % 10;
+}
+
+// Generates the correct period ID for any specific timestamp
+export function getPeriodIdForTimestamp(roomId: RoomType, timestampSec: number): string {
+  const secondsIntoDay = timestampSec % 86400;
+  let totalDuration = 60;
+  if (roomId === '30s') {
+    totalDuration = 30;
+  } else if (roomId === '1m') {
+    totalDuration = 60;
+  } else if (roomId === '3m') {
+    totalDuration = 180;
+  }
+  
+  const periodIndex = Math.floor(secondsIntoDay / totalDuration) + 1;
+  const dateObj = new Date(timestampSec * 1000);
+  const year = dateObj.getUTCFullYear();
+  const month = String(dateObj.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(dateObj.getUTCDate()).padStart(2, '0');
+  const dateStr = `${year}${month}${day}`;
+  
+  return `${dateStr}${String(periodIndex).padStart(4, '0')}`;
+}
+
+// Retrieves the last completed period IDs count
+export function getRecentPeriodIds(roomId: RoomType, count: number): string[] {
+  const nowSec = Math.floor(Date.now() / 1000);
+  let totalDuration = 60;
+  if (roomId === '30s') {
+    totalDuration = 30;
+  } else if (roomId === '1m') {
+    totalDuration = 60;
+  } else if (roomId === '3m') {
+    totalDuration = 180;
+  }
+  
+  const activePeriodStartSec = nowSec - (nowSec % totalDuration);
+  const ids: string[] = [];
+  for (let i = 0; i < count; i++) {
+    const targetSec = activePeriodStartSec - (i * totalDuration) - 5;
+    ids.push(getPeriodIdForTimestamp(roomId, targetSec));
+  }
+  return ids;
+}
+
+// Reconstructs the full details of a deterministic pseudo-random period
+export function getDeterministicResult(periodId: string, roomId: RoomType): GamePeriod {
+  const num = getDeterministicNumber(periodId, roomId);
+  const mapping = COLOR_MAP[num as keyof typeof COLOR_MAP];
+  
+  const year = parseInt(periodId.slice(0, 4), 10);
+  const month = parseInt(periodId.slice(4, 6), 10) - 1;
+  const day = parseInt(periodId.slice(6, 8), 10);
+  const index = parseInt(periodId.slice(8, 12), 10);
+  
+  let totalDuration = 60;
+  if (roomId === '30s') {
+    totalDuration = 30;
+  } else if (roomId === '1m') {
+    totalDuration = 60;
+  } else if (roomId === '3m') {
+    totalDuration = 180;
+  }
+  
+  const secondsIntoDay = index * totalDuration;
+  const dateObj = new Date(Date.UTC(year, month, day, 0, 0, 0));
+  const timestamp = dateObj.getTime() + secondsIntoDay * 1000;
+  
+  return {
+    periodId,
+    roomId,
+    number: num,
+    color: mapping.color,
+    premiumColor: mapping.premiumColor,
+    timestamp
+  };
+}
+

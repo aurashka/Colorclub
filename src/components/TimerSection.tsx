@@ -36,28 +36,41 @@ export default function TimerSection({
       {/* Room Selection Toggle */}
       <div className="flex p-1 bg-slate-900/60 rounded-xl mb-6 border border-slate-800">
         <button
-          onClick={() => setRoomId('parity')}
+          onClick={() => setRoomId('30s')}
           className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer border ${
-            roomId === 'parity'
+            roomId === '30s'
+              ? 'bg-[#1E293B] text-amber-400 border-amber-500/20 shadow-md'
+              : 'text-slate-400 border-transparent hover:text-slate-200 hover:bg-slate-800/50'
+          }`}
+        >
+          <div className="flex flex-col items-center">
+            <span className="text-xs sm:text-sm">30s Arena</span>
+            <span className="text-[9px] font-mono opacity-60">30 Sec Block</span>
+          </div>
+        </button>
+        <button
+          onClick={() => setRoomId('1m')}
+          className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer border ${
+            roomId === '1m'
               ? 'bg-[#1E293B] text-emerald-400 border-emerald-500/20 shadow-md'
               : 'text-slate-400 border-transparent hover:text-slate-200 hover:bg-slate-800/50'
           }`}
         >
           <div className="flex flex-col items-center">
-            <span className="text-sm">Parity Arena</span>
+            <span className="text-xs sm:text-sm">1m Arena</span>
             <span className="text-[9px] font-mono opacity-60">1 Min Block</span>
           </div>
         </button>
         <button
-          onClick={() => setRoomId('sapre')}
+          onClick={() => setRoomId('3m')}
           className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer border ${
-            roomId === 'sapre'
+            roomId === '3m'
               ? 'bg-[#1E293B] text-purple-400 border-purple-500/20 shadow-md'
               : 'text-slate-400 border-transparent hover:text-slate-200 hover:bg-slate-800/50'
           }`}
         >
           <div className="flex flex-col items-center">
-            <span className="text-sm">Sapre Arena</span>
+            <span className="text-xs sm:text-sm">3m Arena</span>
             <span className="text-[9px] font-mono opacity-60">3 Min Block</span>
           </div>
         </button>
@@ -94,7 +107,7 @@ export default function TimerSection({
             )}
             <span className="text-[10px] text-slate-400 flex items-center space-x-1">
               <HelpCircle className="h-3 w-3 text-slate-500" />
-              <span>Lock limits: {roomId === 'parity' ? '10s' : '30s'}</span>
+              <span>Lock limits: {roomId === '30s' ? '5s' : roomId === '1m' ? '10s' : '30s'}</span>
             </span>
           </div>
         </div>
@@ -130,7 +143,7 @@ export default function TimerSection({
             <div
               style={{ width: `${progressPercent}%` }}
               className={`h-full transition-all duration-1000 rounded-full ${
-                isLocked ? 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]' : roomId === 'parity' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.5)]'
+                isLocked ? 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]' : roomId === '30s' ? 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]' : roomId === '1m' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.5)]'
               }`}
             />
           </div>

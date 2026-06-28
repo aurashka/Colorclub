@@ -64,7 +64,7 @@ export default function Navbar({ user, activeTab, setActiveTab, onSignOut }: Nav
               <History className="h-4 w-4" />
               <span>Records</span>
             </button>
-            {user.isAdmin && (
+            {user.role === 'admin' && (
               <button
                 onClick={() => setActiveTab('admin')}
                 className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer border ${
@@ -147,7 +147,7 @@ export default function Navbar({ user, activeTab, setActiveTab, onSignOut }: Nav
           <History className="h-5 w-5 mb-0.5" />
           <span>Records</span>
         </button>
-        {user.isAdmin && (
+        {user.role === 'admin' && (
           <button
             onClick={() => setActiveTab('admin')}
             className={`flex flex-col items-center p-2 text-[10px] font-bold uppercase tracking-wider ${

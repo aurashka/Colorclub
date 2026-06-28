@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from './firebase';
 import { ref, onValue, set, get, update, remove } from 'firebase/database';
-import { RoomType, UserProfile, GamePeriod, BidRecord, DepositRequest, WithdrawalRequest } from './types';
-import { getPeriodDetails, generatePeriodResult, calculateBidResult } from './utils/gameUtils';
+import { RoomType, UserProfile, GamePeriod, BidRecord, DepositRequest, WithdrawalRequest, DepositChannel, DepositChannelField, WithdrawalField } from './types';
+import { getPeriodDetails, generatePeriodResult, calculateBidResult, getRecentPeriodIds, getDeterministicResult, getDeterministicNumber } from './utils/gameUtils';
 
 // Components
 import LoginSignup from './components/LoginSignup';
@@ -22,7 +22,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'home' | 'game' | 'profile'>('home');
   const [activeSubView, setActiveSubView] = useState<'wallet' | 'admin' | null>(null);
   const [walletSubTab, setWalletSubTab] = useState<'deposit' | 'withdrawal' | 'history'>('deposit');
-  const [roomId, setRoomId] = useState<RoomType>('parity');
+  const [roomId, setRoomId] = useState<RoomType>('1m');
 
   // Real-time synced state lists
   const [usersList, setUsersList] = useState<UserProfile[]>([]);
@@ -32,22 +32,121 @@ export default function App() {
   const [activeBids, setActiveBids] = useState<BidRecord[]>([]);
   
   // Game state controls
-  const [periodDetails, setPeriodDetails] = useState(getPeriodDetails('parity'));
+  const [periodDetails, setPeriodDetails] = useState(getPeriodDetails('1m'));
   const [currentOverrides, setCurrentOverrides] = useState<{ [roomId: string]: number }>({});
+  const [presetResults, setPresetResults] = useState<{ [roomId: string]: { [periodId: string]: number } }>({});
 
-  // Track previous period IDs for transition checking (both rooms)
-  const prevPeriodIdParity = useRef<string>('');
-  const prevPeriodIdSapre = useRef<string>('');
+  // Combine real database records with generated fallback records for a complete, continuous sequence
+  const unifiedHistory = React.useMemo(() => {
+    const list: GamePeriod[] = [];
+    const rooms: RoomType[] = ['30s', '1m', '3m'];
+    
+    // Map existing history records by roomKey and periodId for fast lookup
+    const dbHistoryMap: { [room: string]: { [period: string]: GamePeriod } } = {};
+    rooms.forEach((r) => {
+      dbHistoryMap[r] = {};
+    });
+    
+    // Fill dbHistoryMap with real database records
+    history.forEach((item) => {
+      if (dbHistoryMap[item.roomId]) {
+        dbHistoryMap[item.roomId][item.periodId] = item;
+      }
+    });
+    
+    rooms.forEach((roomKey) => {
+      // Retrieve the last 60 period IDs for this arena to show a complete trend list
+      const recentIds = getRecentPeriodIds(roomKey, 60);
+      recentIds.forEach((pId) => {
+        if (dbHistoryMap[roomKey][pId]) {
+          list.push(dbHistoryMap[roomKey][pId]);
+        } else {
+          list.push(getDeterministicResult(pId, roomKey));
+        }
+      });
+      
+      // Also add any older database records that are not in the top 60 list, to preserve any custom matches in history
+      Object.keys(dbHistoryMap[roomKey]).forEach((pId) => {
+        if (!recentIds.includes(pId)) {
+          list.push(dbHistoryMap[roomKey][pId]);
+        }
+      });
+    });
+    
+    return list;
+  }, [history]);
+
+  // Payment gateways / forms custom settings (India UPI and banking)
+  const [depositChannels, setDepositChannels] = useState<DepositChannel[]>([
+    {
+      id: 'paytm_qr',
+      name: 'Paytm QR Speed',
+      type: 'qr',
+      bonus: 0.20,
+      qrCodeUrl: 'https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=upi://pay?pa=pay@upi&pn=WinGo',
+      upiId: 'pay@upi',
+      requiredFields: [
+        { id: 'utr', label: 'UTR Number / Reference (12 digits)', placeholder: 'e.g. 302918273645', type: 'text', required: true }
+      ]
+    },
+    {
+      id: 'upi_transfer',
+      name: 'UPI Instant',
+      type: 'upi',
+      bonus: 0.15,
+      upiId: 'pay@upi',
+      requiredFields: [
+        { id: 'utr', label: 'Transaction ID / UTR', placeholder: 'Enter UPI reference number', type: 'text', required: true }
+      ]
+    },
+    {
+      id: 'bank_instant',
+      name: 'Bank Direct Transfer',
+      type: 'bank',
+      bonus: 0.18,
+      bankName: 'State Bank of India',
+      accountNumber: '1234567890',
+      ifsc: 'SBIN0001234',
+      accountHolder: 'Win Go Enterprise',
+      requiredFields: [
+        { id: 'utr', label: 'IMPS/NEFT Ref Number', placeholder: 'Enter reference or UTR', type: 'text', required: true },
+        { id: 'holder', label: 'Account Holder Name', placeholder: 'e.g. Harshit Maan', type: 'text', required: true }
+      ]
+    }
+  ]);
+  const [withdrawalFields, setWithdrawalFields] = useState<WithdrawalField[]>([
+    { id: 'upi', label: 'UPI ID / VPA', placeholder: 'e.g. name@upi', type: 'text', required: true },
+    { id: 'bankName', label: 'Bank Name', placeholder: 'e.g. State Bank of India', type: 'text', required: false },
+    { id: 'accountNo', label: 'Account Number', placeholder: 'e.g. 1092837465', type: 'text', required: false },
+    { id: 'ifsc', label: 'IFSC Code', placeholder: 'e.g. SBIN0001234', type: 'text', required: false }
+  ]);
+
+  // Track previous period IDs for transition checking (all three rooms)
+  const prevPeriodId30s = useRef<string>('');
+  const prevPeriodId1m = useRef<string>('');
+  const prevPeriodId3m = useRef<string>('');
+
+  // Helper to construct key for email-based profile database
+  const getEmailKey = (email: string): string => {
+    return email.toLowerCase().trim()
+      .replace(/@/g, '_at_')
+      .replace(/\./g, '_');
+  };
+
+  const getUserKey = (profile: UserProfile): string => {
+    return profile.email ? getEmailKey(profile.email) : (profile.phone || profile.uid);
+  };
 
   // 1. Restore login session on mount
   useEffect(() => {
-    const savedPhone = localStorage.getItem('prism_user_phone');
-    if (savedPhone) {
-      const userRef = ref(db, `users/${savedPhone}`);
+    const savedKey = localStorage.getItem('prism_user_key') || localStorage.getItem('prism_user_phone');
+    if (savedKey) {
+      const userRef = ref(db, `users/${savedKey}`);
       get(userRef).then((snap) => {
         if (snap.exists()) {
           setUser(snap.val() as UserProfile);
         } else {
+          localStorage.removeItem('prism_user_key');
           localStorage.removeItem('prism_user_phone');
         }
       });
@@ -56,8 +155,9 @@ export default function App() {
 
   // 2. Real-time subscriber for logged-in User profile & wallet balance
   useEffect(() => {
-    if (!user?.phone) return;
-    const userRef = ref(db, `users/${user.phone}`);
+    if (!user) return;
+    const userKey = getUserKey(user);
+    const userRef = ref(db, `users/${userKey}`);
     const unsubscribe = onValue(userRef, (snap) => {
       if (snap.exists()) {
         const data = snap.val() as UserProfile;
@@ -65,7 +165,7 @@ export default function App() {
       }
     });
     return () => unsubscribe();
-  }, [user?.phone]);
+  }, [user?.email, user?.phone]);
 
   // 3. Real-time subscriber for general database records
   useEffect(() => {
@@ -131,11 +231,85 @@ export default function App() {
       }
     });
 
+    // Presets/Scheduled overrrides
+    const presetsRef = ref(db, 'admin_control/preset_results');
+    const unsubscribePresets = onValue(presetsRef, (snap) => {
+      if (snap.exists()) {
+        setPresetResults(snap.val());
+      } else {
+        setPresetResults({});
+      }
+    });
+
+    // Deposit Channels Config
+    const gatewayRef = ref(db, 'admin_control/deposit_channels');
+    const unsubscribeGateway = onValue(gatewayRef, (snap) => {
+      if (snap.exists()) {
+        setDepositChannels(snap.val() || []);
+      } else {
+        setDepositChannels([
+          {
+            id: 'paytm_qr',
+            name: 'Paytm QR Speed',
+            type: 'qr',
+            bonus: 0.20,
+            qrCodeUrl: 'https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=upi://pay?pa=pay@upi&pn=WinGo',
+            upiId: 'pay@upi',
+            requiredFields: [
+              { id: 'utr', label: 'UTR Number / Reference (12 digits)', placeholder: 'e.g. 302918273645', type: 'text', required: true }
+            ]
+          },
+          {
+            id: 'upi_transfer',
+            name: 'UPI Instant',
+            type: 'upi',
+            bonus: 0.15,
+            upiId: 'pay@upi',
+            requiredFields: [
+              { id: 'utr', label: 'Transaction ID / UTR', placeholder: 'Enter UPI reference number', type: 'text', required: true }
+            ]
+          },
+          {
+            id: 'bank_instant',
+            name: 'Bank Direct Transfer',
+            type: 'bank',
+            bonus: 0.18,
+            bankName: 'State Bank of India',
+            accountNumber: '1234567890',
+            ifsc: 'SBIN0001234',
+            accountHolder: 'Win Go Enterprise',
+            requiredFields: [
+              { id: 'utr', label: 'IMPS/NEFT Ref Number', placeholder: 'Enter reference or UTR', type: 'text', required: true },
+              { id: 'holder', label: 'Account Holder Name', placeholder: 'e.g. Harshit Maan', type: 'text', required: true }
+            ]
+          }
+        ]);
+      }
+    });
+
+    // Withdrawal Custom Config
+    const withConfigRef = ref(db, 'admin_control/withdrawal_config');
+    const unsubscribeWithConfig = onValue(withConfigRef, (snap) => {
+      if (snap.exists()) {
+        setWithdrawalFields(snap.val() || []);
+      } else {
+        setWithdrawalFields([
+          { id: 'upi', label: 'UPI ID / VPA', placeholder: 'e.g. mobile@upi', type: 'text', required: true },
+          { id: 'bankName', label: 'Bank Name', placeholder: 'e.g. HDFC Bank', type: 'text', required: false },
+          { id: 'accountNo', label: 'Account Number', placeholder: 'e.g. 1092837465', type: 'text', required: false },
+          { id: 'ifsc', label: 'IFSC Code', placeholder: 'e.g. HDFC0001234', type: 'text', required: false }
+        ]);
+      }
+    });
+
     return () => {
       unsubscribeHistory();
       unsubscribeDeposits();
       unsubscribeWithdrawals();
       unsubscribeOverrides();
+      unsubscribePresets();
+      unsubscribeGateway();
+      unsubscribeWithConfig();
     };
   }, []);
 
@@ -176,7 +350,7 @@ export default function App() {
 
   // 5. Admin-only subscription: Users list
   useEffect(() => {
-    if (!user?.isAdmin) return;
+    if (user?.role !== 'admin') return;
     const usersRef = ref(db, 'users');
     const unsubscribeUsers = onValue(usersRef, (snap) => {
       if (snap.exists()) {
@@ -191,35 +365,49 @@ export default function App() {
       }
     });
     return () => unsubscribeUsers();
-  }, [user?.isAdmin]);
+  }, [user?.role]);
+
+  // Instantly update periodDetails when roomId changes to ensure zero-lag tab transitions
+  useEffect(() => {
+    setPeriodDetails(getPeriodDetails(roomId));
+  }, [roomId]);
 
   // 6. Global game timer ticks (Synchronized)
   useEffect(() => {
     // Initial load
-    const currentParity = getPeriodDetails('parity');
-    const currentSapre = getPeriodDetails('sapre');
-    prevPeriodIdParity.current = currentParity.periodId;
-    prevPeriodIdSapre.current = currentSapre.periodId;
+    const current30s = getPeriodDetails('30s');
+    const current1m = getPeriodDetails('1m');
+    const current3m = getPeriodDetails('3m');
+    prevPeriodId30s.current = current30s.periodId;
+    prevPeriodId1m.current = current1m.periodId;
+    prevPeriodId3m.current = current3m.periodId;
 
     const interval = setInterval(() => {
       // Update timer states
       const activeDetails = getPeriodDetails(roomId);
       setPeriodDetails(activeDetails);
 
-      // Check transitions for both Parity (1m) and Sapre (3m) in the background
-      const detailsParity = getPeriodDetails('parity');
-      const detailsSapre = getPeriodDetails('sapre');
+      // Check transitions for all three arenas in the background
+      const details30s = getPeriodDetails('30s');
+      const details1m = getPeriodDetails('1m');
+      const details3m = getPeriodDetails('3m');
 
-      if (detailsParity.periodId !== prevPeriodIdParity.current) {
-        const oldPeriodId = prevPeriodIdParity.current;
-        prevPeriodIdParity.current = detailsParity.periodId;
-        handlePeriodTransition('parity', oldPeriodId);
+      if (details30s.periodId !== prevPeriodId30s.current) {
+        const oldPeriodId = prevPeriodId30s.current;
+        prevPeriodId30s.current = details30s.periodId;
+        handlePeriodTransition('30s', oldPeriodId);
       }
 
-      if (detailsSapre.periodId !== prevPeriodIdSapre.current) {
-        const oldPeriodId = prevPeriodIdSapre.current;
-        prevPeriodIdSapre.current = detailsSapre.periodId;
-        handlePeriodTransition('sapre', oldPeriodId);
+      if (details1m.periodId !== prevPeriodId1m.current) {
+        const oldPeriodId = prevPeriodId1m.current;
+        prevPeriodId1m.current = details1m.periodId;
+        handlePeriodTransition('1m', oldPeriodId);
+      }
+
+      if (details3m.periodId !== prevPeriodId3m.current) {
+        const oldPeriodId = prevPeriodId3m.current;
+        prevPeriodId3m.current = details3m.periodId;
+        handlePeriodTransition('3m', oldPeriodId);
       }
     }, 1000);
 
@@ -230,40 +418,55 @@ export default function App() {
   const handlePeriodTransition = async (roomKey: RoomType, oldPeriodId: string) => {
     console.log(`Transitioning ${roomKey} period: ${oldPeriodId}`);
     try {
-      // 1. Check if result already exists in history
-      const historyRecordRef = ref(db, `history/${roomKey}/${oldPeriodId}`);
-      const historySnap = await get(historyRecordRef);
-      
-      let winningNum: number;
-
-      if (historySnap.exists()) {
-        winningNum = historySnap.val().number;
-      } else {
-        // Result doesn't exist yet! Let's build it (Cooperative single writer)
-        // Check if administrator set an override
-        const overrideRef = ref(db, `admin_control/active_period_override/${roomKey}`);
-        const overrideSnap = await get(overrideRef);
-        
-        if (overrideSnap.exists() && overrideSnap.val() !== null) {
-          winningNum = Number(overrideSnap.val());
-          // Consume override
-          await remove(overrideRef);
-        } else {
-          // Organic random choice
-          winningNum = Math.floor(Math.random() * 10);
-        }
-
-        // Generate and save historical result
-        const resultRecord = generatePeriodResult(oldPeriodId, roomKey, winningNum);
-        await set(historyRecordRef, resultRecord);
-      }
-
-      // 2. Query and Settle Bids for this period
+      // 1. Fetch bids first to see if any user placed bets
       const bidsPath = `bids/${roomKey}/${oldPeriodId}`;
       const periodBidsRef = ref(db, bidsPath);
       const bidsSnap = await get(periodBidsRef);
+      const hasBids = bidsSnap.exists();
 
-      if (bidsSnap.exists()) {
+      // 2. Fetch presets/overrides
+      const presetRef = ref(db, `admin_control/preset_results/${roomKey}/${oldPeriodId}`);
+      const presetSnap = await get(presetRef);
+      const hasPreset = presetSnap.exists() && presetSnap.val() !== null;
+
+      const overrideRef = ref(db, `admin_control/active_period_override/${roomKey}`);
+      const overrideSnap = await get(overrideRef);
+      const hasOverride = overrideSnap.exists() && overrideSnap.val() !== null;
+
+      const historyRecordRef = ref(db, `history/${roomKey}/${oldPeriodId}`);
+      const historySnap = await get(historyRecordRef);
+      const hasHistory = historySnap.exists();
+
+      let winningNum: number;
+
+      if (hasHistory) {
+        winningNum = historySnap.val().number;
+      } else {
+        // Only determine and save if hasBids OR hasPreset OR hasOverride
+        if (hasBids || hasPreset || hasOverride) {
+          if (hasPreset) {
+            winningNum = Number(presetSnap.val());
+            await remove(presetRef);
+          } else if (hasOverride) {
+            winningNum = Number(overrideSnap.val());
+            await remove(overrideRef);
+          } else {
+            // Organic fallback based on deterministic generator to be perfectly fair and consistent
+            winningNum = getDeterministicNumber(oldPeriodId, roomKey);
+          }
+
+          // Generate and save historical result
+          const resultRecord = generatePeriodResult(oldPeriodId, roomKey, winningNum);
+          await set(historyRecordRef, resultRecord);
+        } else {
+          // If no user bid and no admin override, DO NOT save anything in Firebase!
+          // We will fallback to getDeterministicResult(oldPeriodId, roomKey) dynamically on the client history render.
+          return;
+        }
+      }
+
+      // 3. Settle Bids for this period
+      if (hasBids) {
         const usersBidsData = bidsSnap.val();
         // Settle each user's bids
         for (const uid of Object.keys(usersBidsData)) {
@@ -281,7 +484,8 @@ export default function App() {
 
               // Credit winnings back to user balance in realtime
               if (status === 'won' && winAmount > 0) {
-                const userProfileRef = ref(db, `users/${bid.phone}`);
+                const bidUserKey = bid.email ? getEmailKey(bid.email) : (bid.phone || uid);
+                const userProfileRef = ref(db, `users/${bidUserKey}`);
                 const currentProfileSnap = await get(userProfileRef);
                 if (currentProfileSnap.exists()) {
                   const currentProfile = currentProfileSnap.val() as UserProfile;
@@ -301,11 +505,14 @@ export default function App() {
   // Auth handles
   const handleLoginSuccess = (profile: UserProfile) => {
     setUser(profile);
-    localStorage.setItem('prism_user_phone', profile.phone);
+    const key = getUserKey(profile);
+    localStorage.setItem('prism_user_key', key);
+    localStorage.setItem('prism_user_phone', profile.phone || '');
   };
 
   const handleSignOut = () => {
     setUser(null);
+    localStorage.removeItem('prism_user_key');
     localStorage.removeItem('prism_user_phone');
     setActiveSubView(null);
     setActiveTab('home');
@@ -322,13 +529,14 @@ export default function App() {
     }
 
     // Double check balance
-    const userProfileRef = ref(db, `users/${user.phone}`);
+    const userKey = getUserKey(user);
+    const userProfileRef = ref(db, `users/${userKey}`);
     const userSnap = await get(userProfileRef);
     if (!userSnap.exists()) throw new Error('User account not found.');
     const activeProfile = userSnap.val() as UserProfile;
     
     if (activeProfile.wallet < totalCost) {
-      throw new Error(`Insufficient wallet balance. Total cost: $${totalCost.toFixed(2)}, available: $${activeProfile.wallet.toFixed(2)}.`);
+      throw new Error(`Insufficient wallet balance. Total cost: ₹${totalCost.toFixed(2)}, available: ₹${activeProfile.wallet.toFixed(2)}.`);
     }
 
     // 1. Deduct wallet balance from database
@@ -340,7 +548,8 @@ export default function App() {
     const bidRecordRef = ref(db, `bids/${roomId}/${currentDetails.periodId}/${user.uid}/${bidId}`);
     
     const record: Partial<BidRecord> = {
-      phone: user.phone,
+      phone: user.phone || '',
+      email: user.email || '',
       nickname: user.nickname,
       selection: selection as any,
       amount: totalCost,
@@ -353,18 +562,23 @@ export default function App() {
   };
 
   // Wallet operations: Deposits Claims
-  const handleDepositSubmit = async (amount: number, utr: string) => {
+  const handleDepositSubmit = async (amount: number, utr: string, channelName?: string, fieldsData?: { [key: string]: string }) => {
     if (!user) return;
+    const userKey = getUserKey(user);
     const depositId = `dep_${Date.now()}`;
     const depositRef = ref(db, `deposits/${depositId}`);
     
-    const request: DepositRequest = {
+    const request: any = {
       depositId,
       userId: user.uid,
-      phone: user.phone,
+      userKey,
+      phone: user.phone || '',
+      email: user.email || '',
       nickname: user.nickname,
       amount,
       utr,
+      fieldsData: fieldsData || {},
+      channel: channelName || 'UPI QR',
       status: 'pending',
       createdAt: Date.now(),
       updatedAt: Date.now()
@@ -375,15 +589,12 @@ export default function App() {
   // Wallet operations: Withdrawals Requests
   const handleWithdrawalSubmit = async (
     amount: number,
-    bankName: string,
-    accountNumber: string,
-    ifsc: string,
-    upi: string
+    fieldsData: { [key: string]: string }
   ) => {
     if (!user) return;
 
-    // Deduct held balance immediately from wallet
-    const userProfileRef = ref(db, `users/${user.phone}`);
+    const userKey = getUserKey(user);
+    const userProfileRef = ref(db, `users/${userKey}`);
     const snap = await get(userProfileRef);
     if (!snap.exists()) throw new Error('User not found.');
     const profile = snap.val() as UserProfile;
@@ -399,16 +610,25 @@ export default function App() {
     const withdrawalId = `with_${Date.now()}`;
     const withdrawalRef = ref(db, `withdrawals/${withdrawalId}`);
 
-    const request: WithdrawalRequest = {
+    // Map fieldsData to old keys to keep compatibility with Admin Panel table layout
+    const bankName = fieldsData['bankName'] || fieldsData['Bank Name'] || fieldsData['bank'] || '';
+    const accountNumber = fieldsData['accountNo'] || fieldsData['Account Number'] || fieldsData['acc'] || '';
+    const ifsc = fieldsData['ifsc'] || fieldsData['IFSC Code'] || '';
+    const upi = fieldsData['upi'] || fieldsData['UPI ID'] || fieldsData['UPI ID / VPA'] || '';
+
+    const request: any = {
       withdrawalId,
       userId: user.uid,
-      phone: user.phone,
+      userKey,
+      phone: user.phone || '',
+      email: user.email || '',
       nickname: user.nickname,
       amount,
-      bankName: bankName || '',
-      accountNumber: accountNumber || '',
-      ifsc: ifsc || '',
-      upi: upi || '',
+      fieldsData,
+      bankName,
+      accountNumber,
+      ifsc,
+      upi,
       status: 'pending',
       createdAt: Date.now(),
       updatedAt: Date.now()
@@ -418,9 +638,9 @@ export default function App() {
   };
 
   // Admin Ledger operations: Adjust wallet balance directly
-  const handleUpdateUserWallet = async (phone: string, newBalance: number) => {
-    if (!user?.isAdmin) return;
-    const userRef = ref(db, `users/${phone}`);
+  const handleUpdateUserWallet = async (userKey: string, newBalance: number) => {
+    if (user?.role !== 'admin') return;
+    const userRef = ref(db, `users/${userKey}`);
     await update(userRef, { wallet: newBalance });
   };
 
@@ -430,12 +650,12 @@ export default function App() {
     status: 'approved' | 'rejected' | 'hold',
     holdReason?: string
   ) => {
-    if (!user?.isAdmin) return;
+    if (user?.role !== 'admin') return;
     
     const depositRef = ref(db, `deposits/${depositId}`);
     const depSnap = await get(depositRef);
     if (!depSnap.exists()) return;
-    const depRequest = depSnap.val() as DepositRequest;
+    const depRequest = depSnap.val() as any;
 
     if (depRequest.status === 'approved') return; // already approved
 
@@ -448,7 +668,8 @@ export default function App() {
 
     // If approved, add money to user's wallet
     if (status === 'approved') {
-      const userRef = ref(db, `users/${depRequest.phone}`);
+      const depUserKey = depRequest.userKey || (depRequest.email ? getEmailKey(depRequest.email) : depRequest.phone);
+      const userRef = ref(db, `users/${depUserKey}`);
       const userSnap = await get(userRef);
       if (userSnap.exists()) {
         const uProfile = userSnap.val() as UserProfile;
@@ -464,12 +685,12 @@ export default function App() {
     status: 'approved' | 'rejected' | 'hold',
     holdReason?: string
   ) => {
-    if (!user?.isAdmin) return;
+    if (user?.role !== 'admin') return;
 
     const withdrawalRef = ref(db, `withdrawals/${withdrawalId}`);
     const withSnap = await get(withdrawalRef);
     if (!withSnap.exists()) return;
-    const withRequest = withSnap.val() as WithdrawalRequest;
+    const withRequest = withSnap.val() as any;
 
     if (withRequest.status === 'approved') return; // already processed
 
@@ -482,7 +703,8 @@ export default function App() {
 
     // If rejected, return held funds to user's wallet
     if (status === 'rejected') {
-      const userRef = ref(db, `users/${withRequest.phone}`);
+      const withUserKey = withRequest.userKey || (withRequest.email ? getEmailKey(withRequest.email) : withRequest.phone);
+      const userRef = ref(db, `users/${withUserKey}`);
       const userSnap = await get(userRef);
       if (userSnap.exists()) {
         const uProfile = userSnap.val() as UserProfile;
@@ -494,15 +716,40 @@ export default function App() {
 
   // Admin Manipulation overrides
   const handleSetWinningOverride = async (roomKey: RoomType, num: number) => {
-    if (!user?.isAdmin) return;
+    if (user?.role !== 'admin') return;
     const overrideRef = ref(db, `admin_control/active_period_override/${roomKey}`);
     await set(overrideRef, num);
   };
 
   const handleClearWinningOverride = async (roomKey: RoomType) => {
-    if (!user?.isAdmin) return;
+    if (user?.role !== 'admin') return;
     const overrideRef = ref(db, `admin_control/active_period_override/${roomKey}`);
     await remove(overrideRef);
+  };
+
+  // Admin Manipulation: Future Presets
+  const handleSetPresetResult = async (roomKey: RoomType, periodId: string, num: number) => {
+    if (user?.role !== 'admin') return;
+    const presetRef = ref(db, `admin_control/preset_results/${roomKey}/${periodId}`);
+    await set(presetRef, num);
+  };
+
+  const handleClearPresetResult = async (roomKey: RoomType, periodId: string) => {
+    if (user?.role !== 'admin') return;
+    const presetRef = ref(db, `admin_control/preset_results/${roomKey}/${periodId}`);
+    await remove(presetRef);
+  };
+
+  const handleUpdateDepositChannels = async (channels: DepositChannel[]) => {
+    if (user?.role !== 'admin') return;
+    const gatewayRef = ref(db, 'admin_control/deposit_channels');
+    await set(gatewayRef, channels);
+  };
+
+  const handleUpdateWithdrawalConfig = async (fields: WithdrawalField[]) => {
+    if (user?.role !== 'admin') return;
+    const configRef = ref(db, 'admin_control/withdrawal_config');
+    await set(configRef, fields);
   };
 
   // Unauthenticated view (Wrapped in smartphone simulator)
@@ -530,7 +777,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#070B14] flex items-center justify-center p-0 md:p-6 lg:p-8 font-sans selection:bg-amber-500/30">
       {/* Smartphone Container */}
-      <div className="w-full h-screen md:h-[860px] md:max-w-[430px] md:rounded-[36px] md:border-[10px] md:border-slate-900 md:shadow-[0_25px_60px_-15px_rgba(0,0,0,0.8)] bg-[#0F172A] flex flex-col relative overflow-hidden">
+      <div id="smartphone-container" className="w-full h-screen md:h-[860px] md:max-w-[430px] md:rounded-[36px] md:border-[10px] md:border-slate-900 md:shadow-[0_25px_60px_-15px_rgba(0,0,0,0.8)] bg-[#0F172A] flex flex-col relative overflow-hidden">
         
         {/* Scrollable Viewport (Height reserved for bottom bar if no subview is open) */}
         <div className={`flex-1 overflow-y-auto overflow-x-hidden ${activeSubView ? 'pb-4' : 'pb-20'} custom-scrollbar relative bg-[#0D121F]`}>
@@ -557,13 +804,15 @@ export default function App() {
                   withdrawals={withdrawals}
                   onDepositSubmit={handleDepositSubmit}
                   onWithdrawalSubmit={handleWithdrawalSubmit}
+                  depositChannels={depositChannels}
+                  withdrawalFields={withdrawalFields}
                 />
               </div>
             </div>
           )}
 
           {/* Subview Layer: Admin */}
-          {activeSubView === 'admin' && user.isAdmin && (
+          {activeSubView === 'admin' && user.role === 'admin' && (
             <div className="animate-in fade-in duration-300">
               {/* Back Header */}
               <div className="flex items-center space-x-2 bg-[#0B0F17] p-4 sticky top-0 border-b border-slate-900/80 z-30">
@@ -583,14 +832,23 @@ export default function App() {
                   deposits={deposits}
                   withdrawals={withdrawals}
                   activeBids={activeBids}
-                  activePeriodIdParity={getPeriodDetails('parity').periodId}
-                  activePeriodIdSapre={getPeriodDetails('sapre').periodId}
+                  activePeriodId30s={getPeriodDetails('30s').periodId}
+                  activePeriodId1m={getPeriodDetails('1m').periodId}
+                  activePeriodId3m={getPeriodDetails('3m').periodId}
+                  history={unifiedHistory}
                   onUpdateUserWallet={handleUpdateUserWallet}
                   onHandleDeposit={handleDepositAction}
                   onHandleWithdrawal={handleWithdrawalAction}
                   onSetWinningOverride={handleSetWinningOverride}
                   onClearWinningOverride={handleClearWinningOverride}
                   currentOverrides={currentOverrides}
+                  onSetPresetResult={handleSetPresetResult}
+                  onClearPresetResult={handleClearPresetResult}
+                  presetResults={presetResults}
+                  depositChannels={depositChannels}
+                  withdrawalFields={withdrawalFields}
+                  onUpdateDepositChannels={handleUpdateDepositChannels}
+                  onUpdateWithdrawalConfig={handleUpdateWithdrawalConfig}
                 />
               </div>
             </div>
@@ -616,7 +874,7 @@ export default function App() {
                   user={user}
                   activeBids={userActiveBids}
                   userAllBids={userRoomBids}
-                  history={history}
+                  history={unifiedHistory}
                   onPlaceBid={handlePlaceBid}
                   onNavigateToWallet={(subTab) => {
                     setActiveSubView('wallet');
@@ -673,7 +931,7 @@ export default function App() {
               <div className={`p-1 rounded-full transition-transform ${activeTab === 'game' ? 'bg-amber-500/10 scale-105 text-amber-400' : 'text-slate-500'}`}>
                 <Sparkles className="w-5 h-5" />
               </div>
-              <span className="text-[9px] mt-0.5 tracking-wider uppercase font-black">Color Club</span>
+              <span className="text-[9px] mt-0.5 tracking-wider uppercase font-black">Win Go</span>
             </button>
 
             {/* Profile Tab Button */}

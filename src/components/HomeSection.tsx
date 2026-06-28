@@ -224,14 +224,7 @@ export default function HomeSection({ onLaunchGame, userPhone }: HomeSectionProp
         </button>
       </div>
 
-      {/* Decorative safety badge card */}
-      <div className="bg-[#121110] border border-[#3D2C08]/25 rounded-xl p-3 flex items-start space-x-3 text-slate-400">
-        <ShieldCheck className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
-        <div className="text-[9px] space-y-0.5">
-          <span className="font-bold text-slate-300 block">Secured Prediction Engine</span>
-          <p className="leading-relaxed">All round calculations utilize decentralized, auditable UTC timestamps to prevent system manipulation and secure your stakes.</p>
-        </div>
-      </div>
+
     </div>
   );
 }

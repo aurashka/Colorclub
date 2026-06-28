@@ -78,7 +78,7 @@ export default function ProfileSection({
         <div className="flex justify-between items-start">
           <div className="space-y-0.5">
             <h3 className="text-sm font-black tracking-wide text-[#3D2C08] flex items-center space-x-1">
-              <span>Id : {user.nickname.includes('@') ? user.nickname : `${user.nickname}@gmail.com`}</span>
+              <span>Id : {user?.nickname ? (user.nickname.includes('@') ? user.nickname : `${user.nickname}@gmail.com`) : 'user@gmail.com'}</span>
             </h3>
             <div className="flex items-center space-x-1.5 text-[#3D2C08]/90 text-xs mt-1">
               <span>Refercode : <span className="font-mono font-bold text-[#3D2C08]">{user.inviteCode || 'aT2Zb2'}</span></span>
@@ -245,7 +245,7 @@ export default function ProfileSection({
       </div>
 
       {/* Admin Panel Gateway (Only visible to admin users) */}
-      {user.isAdmin && (
+      {user.role === 'admin' && (
         <button
           onClick={onNavigateToAdmin}
           className="w-full bg-purple-500/10 hover:bg-purple-500/15 text-purple-400 border border-purple-500/35 py-4 rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center space-x-2.5 transition-all shadow-md cursor-pointer animate-pulse"

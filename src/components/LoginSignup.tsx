@@ -2,14 +2,21 @@ import React, { useState } from 'react';
 import { db } from '../firebase';
 import { ref, get, set } from 'firebase/database';
 import { UserProfile } from '../types';
-import { Shield, Phone, Lock, User, UserPlus, LogIn, Award } from 'lucide-react';
+import { Shield, Phone, Lock, User, UserPlus, LogIn, Award, Mail } from 'lucide-react';
 
 interface LoginSignupProps {
   onLoginSuccess: (user: UserProfile) => void;
 }
 
+export const getEmailKey = (email: string): string => {
+  return email.toLowerCase().trim()
+    .replace(/@/g, '_at_')
+    .replace(/\./g, '_');
+};
+
 export default function LoginSignup({ onLoginSuccess }: LoginSignupProps) {
   const [isLogin, setIsLogin] = useState(true);
+  const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [nickname, setNickname] = useState('');
@@ -21,13 +28,13 @@ export default function LoginSignup({ onLoginSuccess }: LoginSignupProps) {
     e.preventDefault();
     setError('');
     
-    if (!phone || !password) {
+    if (!email || !password) {
       setError('Please fill in all required fields.');
       return;
     }
 
-    if (phone.length < 10) {
-      setError('Please enter a valid 10-digit phone number.');
+    if (!email.includes('@') || !email.includes('.')) {
+      setError('Please enter a valid email address.');
       return;
     }
 
@@ -39,7 +46,8 @@ export default function LoginSignup({ onLoginSuccess }: LoginSignupProps) {
     setLoading(true);
 
     try {
-      const userRef = ref(db, `users/${phone}`);
+      const emailKey = getEmailKey(email);
+      const userRef = ref(db, `users/${emailKey}`);
       const snapshot = await get(userRef);
 
       if (isLogin) {
@@ -61,7 +69,7 @@ export default function LoginSignup({ onLoginSuccess }: LoginSignupProps) {
       } else {
         // Signup flow
         if (snapshot.exists()) {
-          setError('Phone number already registered. Please login.');
+          setError('Email already registered. Please login.');
           setLoading(false);
           return;
         }
@@ -72,15 +80,20 @@ export default function LoginSignup({ onLoginSuccess }: LoginSignupProps) {
           return;
         }
 
+        const normalizedEmail = email.toLowerCase().trim();
+        const isDefaultAdmin = normalizedEmail === 'admin@gmail.com' || normalizedEmail === 'smartharshitmaan@gmail.com';
+
         // Set up initial profile
         const newUser: UserProfile = {
           uid: `user_${Date.now()}`,
-          phone,
+          email: normalizedEmail,
+          phone: phone || '',
           password,
           nickname,
           wallet: 20, // Free $20 sign-up bonus to make it extremely interactive!
           inviteCode: inviteCode || '',
-          isAdmin: phone === '1234567890' || phone === '9999999999', // Auto-admin for easy review
+          role: isDefaultAdmin ? 'admin' : 'user',
+          isAdmin: isDefaultAdmin,
           createdAt: Date.now()
         };
 
@@ -120,21 +133,39 @@ export default function LoginSignup({ onLoginSuccess }: LoginSignupProps) {
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
           <div className="rounded-md space-y-4">
             <div>
-              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Mobile Number</label>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Email Address</label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
-                  <Phone className="h-4.5 w-4.5" />
+                  <Mail className="h-4.5 w-4.5" />
                 </div>
                 <input
-                  type="tel"
+                  type="email"
                   required
-                  placeholder="e.g. 9876543210"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
-                  className="block w-full pl-10 pr-3 py-3 bg-slate-950 border border-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/50 text-white placeholder-slate-700 text-sm font-mono"
+                  placeholder="name@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="block w-full pl-10 pr-3 py-3 bg-slate-950 border border-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/50 text-white placeholder-slate-700 text-sm font-sans"
                 />
               </div>
             </div>
+
+            {!isLogin && (
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Mobile Number (Optional)</label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                    <Phone className="h-4.5 w-4.5" />
+                  </div>
+                  <input
+                    type="tel"
+                    placeholder="e.g. 9876543210"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
+                    className="block w-full pl-10 pr-3 py-3 bg-slate-950 border border-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/50 text-white placeholder-slate-700 text-sm font-mono"
+                  />
+                </div>
+              </div>
+            )}
 
             {!isLogin && (
               <div>
@@ -230,10 +261,6 @@ export default function LoginSignup({ onLoginSuccess }: LoginSignupProps) {
           >
             {isLogin ? "Don't have an account? Sign up" : 'Already have an account? Log in'}
           </button>
-        </div>
-
-        <div className="text-center bg-slate-950/40 rounded-xl p-3.5 text-[11px] text-slate-400 border border-slate-800/80 leading-relaxed">
-          Tip: Enter <span className="font-bold text-emerald-400">1234567890</span> as phone with any password to login as pre-configured Administrator.
         </div>
       </div>
     </div>

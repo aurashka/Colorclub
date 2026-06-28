@@ -1,12 +1,14 @@
-export type RoomType = 'parity' | 'sapre'; // Parity = 1 min, Sapre = 3 min
+export type RoomType = '30s' | '1m' | '3m';
 
 export interface UserProfile {
   uid: string;
-  phone: string;
+  email: string; // main Email
+  phone?: string; // optional Phone
   password?: string; // used for verification
   nickname: string;
   wallet: number;
   inviteCode?: string;
+  role?: 'admin' | 'user';
   isAdmin?: boolean;
   createdAt: number;
 }
@@ -26,7 +28,8 @@ export interface GamePeriod {
 export interface BidRecord {
   bidId: string;
   userId: string;
-  phone: string;
+  phone?: string;
+  email?: string;
   nickname: string;
   periodId: string;
   roomId: RoomType;
@@ -43,9 +46,11 @@ export interface DepositRequest {
   phone: string;
   nickname: string;
   amount: number;
-  utr: string; // transaction reference number
+  utr: string; // fallback or general reference
+  fieldsData?: { [key: string]: string }; // customizable input fields submitted by user
   status: 'pending' | 'approved' | 'rejected' | 'hold';
   holdReason?: string;
+  channel?: string; // name of selected deposit method
   createdAt: number;
   updatedAt: number;
 }
@@ -56,6 +61,7 @@ export interface WithdrawalRequest {
   phone: string;
   nickname: string;
   amount: number;
+  fieldsData?: { [key: string]: string }; // dynamic custom fields
   bankName?: string;
   accountNumber?: string;
   ifsc?: string;
@@ -64,6 +70,36 @@ export interface WithdrawalRequest {
   holdReason?: string;
   createdAt: number;
   updatedAt: number;
+}
+
+export interface DepositChannelField {
+  id: string;
+  label: string;
+  placeholder: string;
+  type: 'text' | 'number';
+  required: boolean;
+}
+
+export interface DepositChannel {
+  id: string;
+  name: string;
+  type: 'qr' | 'upi' | 'bank' | 'custom';
+  bonus: number; // multiplier, e.g. 0.20 for 20%
+  upiId?: string;
+  qrCodeUrl?: string;
+  bankName?: string;
+  accountNumber?: string;
+  ifsc?: string;
+  accountHolder?: string;
+  requiredFields: DepositChannelField[];
+}
+
+export interface WithdrawalField {
+  id: string;
+  label: string;
+  placeholder: string;
+  type: 'text' | 'number';
+  required: boolean;
 }
 
 export interface AdminSettings {

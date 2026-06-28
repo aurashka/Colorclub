@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { RoomType, BidRecord, UserProfile, GamePeriod } from '../types';
+import { getPeriodDetails } from '../utils/gameUtils';
 import { 
   Coins, Wallet, RefreshCw, HelpCircle, Lock, Unlock, Landmark,
   ChevronRight, Volume2, Play, Flame, Star, AlertTriangle, HelpCircle as HelpIcon, CheckCircle2,
@@ -53,31 +55,6 @@ export default function GameSection({
     return history.find((h) => h.periodId === pId && h.roomId === roomId);
   };
 
-  // Live winning marquee list
-  const [mockWinners, setMockWinners] = useState<string[]>([]);
-
-  useEffect(() => {
-    // Generate organic simulated dynamic winner notifications to look extremely real!
-    const prefixes = ['+91-8739#####', '+91-9921#####', '+91-7012#####', '+91-9140#####', '+91-8152#####'];
-    const suffixes = ['94', '21', '08', '47', '35', '88', '19', '52'];
-    const amounts = [150, 480, 1100, 2400, 5990, 9200, 14000];
-
-    const generateWinner = () => {
-      const p = prefixes[Math.floor(Math.random() * prefixes.length)];
-      const s = suffixes[Math.floor(Math.random() * suffixes.length)];
-      const a = amounts[Math.floor(Math.random() * amounts.length)];
-      return `User -> ${p}${s} Win ⭐ --> ₹${a}`;
-    };
-
-    setMockWinners([generateWinner(), generateWinner(), generateWinner()]);
-
-    const timer = setInterval(() => {
-      setMockWinners((prev) => [generateWinner(), ...prev.slice(0, 2)]);
-    }, 5000);
-
-    return () => clearInterval(timer);
-  }, []);
-
   const handleSelection = (sel: string) => {
     if (isLocked) return;
     setSelectedSelection(sel);
@@ -112,7 +89,6 @@ export default function GameSection({
     setSuccessMsg('');
     try {
       await onPlaceBid(selectedSelection, totalCost);
-      setSuccessMsg(`Staked ₹${totalCost.toFixed(2)} on ${selectedSelection.toUpperCase()} successfully!`);
       setSelectedSelection(null);
       setMultiplier(1);
     } catch (err: any) {
@@ -210,26 +186,53 @@ export default function GameSection({
       </div>
 
       {/* Arena Switch Toggles */}
-      <div className="flex p-0.5 bg-[#181716] rounded-xl border border-[#3D2C08]/10">
+      <div className="flex p-0.5 bg-[#181716] rounded-xl border border-[#3D2C08]/10 space-x-1">
         <button
-          onClick={() => setRoomId('parity')}
-          className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer ${
-            roomId === 'parity'
-              ? 'bg-gradient-to-r from-[#FFE194] to-[#E2B354] text-[#3D2C08] font-black shadow'
-              : 'text-slate-500 hover:text-slate-300'
+          onClick={() => setRoomId('30s')}
+          className={`flex-1 py-2 px-1 text-[9px] font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer flex flex-col items-center justify-center min-h-[46px] ${
+            roomId === '30s'
+              ? 'bg-gradient-to-r from-[#FFE194] to-[#E2B354] text-[#3D2C08] font-black shadow-lg scale-[1.02]'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/40'
           }`}
         >
-          Parity (1m)
+          <span className="font-extrabold truncate">30 Sec</span>
+          <span className={`font-mono text-[9px] mt-0.5 font-bold ${
+            roomId === '30s' ? 'text-[#3D2C08]/90' : 'text-slate-400'
+          }`}>
+            {formatTime(getPeriodDetails('30s').timeLeft)}
+          </span>
         </button>
+
         <button
-          onClick={() => setRoomId('sapre')}
-          className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer ${
-            roomId === 'sapre'
-              ? 'bg-gradient-to-r from-[#FFE194] to-[#E2B354] text-[#3D2C08] font-black shadow'
-              : 'text-slate-500 hover:text-slate-300'
+          onClick={() => setRoomId('1m')}
+          className={`flex-1 py-2 px-1 text-[9px] font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer flex flex-col items-center justify-center min-h-[46px] ${
+            roomId === '1m'
+              ? 'bg-gradient-to-r from-[#FFE194] to-[#E2B354] text-[#3D2C08] font-black shadow-lg scale-[1.02]'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/40'
           }`}
         >
-          Sapre (3m)
+          <span className="font-extrabold truncate">1 Min</span>
+          <span className={`font-mono text-[9px] mt-0.5 font-bold ${
+            roomId === '1m' ? 'text-[#3D2C08]/90' : 'text-slate-400'
+          }`}>
+            {formatTime(getPeriodDetails('1m').timeLeft)}
+          </span>
+        </button>
+
+        <button
+          onClick={() => setRoomId('3m')}
+          className={`flex-1 py-2 px-1 text-[9px] font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer flex flex-col items-center justify-center min-h-[46px] ${
+            roomId === '3m'
+              ? 'bg-gradient-to-r from-[#FFE194] to-[#E2B354] text-[#3D2C08] font-black shadow-lg scale-[1.02]'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/40'
+          }`}
+        >
+          <span className="font-extrabold truncate">3 Min</span>
+          <span className={`font-mono text-[9px] mt-0.5 font-bold ${
+            roomId === '3m' ? 'text-[#3D2C08]/90' : 'text-slate-400'
+          }`}>
+            {formatTime(getPeriodDetails('3m').timeLeft)}
+          </span>
         </button>
       </div>
 
@@ -280,12 +283,12 @@ export default function GameSection({
           </div>
         )}
 
-        {/* 3D past 5 balls outcome tracker */}
+        {/* 3D past 8 balls outcome tracker */}
         <div className="flex justify-between items-center pt-3">
-          <div className="space-y-1">
-            <span className="text-[8px] font-black text-[#3D2C08]/80 uppercase tracking-widest block">Recent Results</span>
-            <div className="flex items-center space-x-1">
-              {getFilteredHistory().slice(0, 5).reverse().map((item, idx) => (
+          <div className="space-y-1.5 w-full">
+            <span className="text-[8px] font-black text-[#3D2C08]/80 uppercase tracking-widest block">Recent Results (Last 8 Draws)</span>
+            <div className="flex flex-wrap gap-1.5 items-center">
+              {getFilteredHistory().slice(0, 8).reverse().map((item, idx) => (
                 <div key={idx} className={getBallStyle(item.number)}>
                   <span>{item.number}</span>
                 </div>
@@ -297,23 +300,7 @@ export default function GameSection({
           </div>
         </div>
 
-        {/* Locking notification */}
-        {isLocked && (
-          <div className="bg-[#3D2C08]/10 border border-[#3D2C08]/20 rounded-xl px-3 py-1.5 flex items-center space-x-2 text-[10px] text-[#3D2C08] mt-3 font-bold">
-            <Lock className="h-3 w-3 text-[#3D2C08] shrink-0" />
-            <span>Draw period is locked!</span>
-          </div>
-        )}
-      </div>
 
-      {/* 3. Live Winner Announcement Ticker */}
-      <div className="bg-[#181716] border border-[#3D2C08]/10 rounded-xl px-3.5 py-2.5 flex items-center space-x-2.5 overflow-hidden h-9">
-        <Volume2 className="h-4 w-4 text-[#E5A93B] shrink-0" />
-        <div className="relative w-full h-4 overflow-hidden text-[10px] font-extrabold text-[#E5A93B]/95">
-          <div className="absolute inset-0 flex items-center animate-in fade-in duration-300">
-            <span className="truncate">{mockWinners[0]}</span>
-          </div>
-        </div>
       </div>
 
       {/* 4. Color Prediction Buttons (Cohesive Triple Segment Pill block) */}
@@ -453,7 +440,7 @@ export default function GameSection({
       )}
 
       {/* 9. Floating Stake Confirm Drawer with Backdrop */}
-      {selectedSelection && (
+      {selectedSelection && createPortal(
         <>
           {/* Backdrop Overlay */}
           <div 
@@ -579,18 +566,25 @@ export default function GameSection({
               </button>
               
               <button
-                disabled={loading || !termsAccepted}
+                disabled={loading || !termsAccepted || isLocked}
                 onClick={handleConfirmBid}
                 className={`col-span-2 ${
-                  getSelectionTheme(selectedSelection).bg
+                  isLocked 
+                    ? 'bg-rose-950/40 text-rose-500 border border-rose-500/30' 
+                    : getSelectionTheme(selectedSelection).bg
                 } ${
-                  getSelectionTheme(selectedSelection).hover
-                } text-white font-black text-[10px] uppercase tracking-wider py-3.5 rounded-2xl transition-all shadow-md flex items-center justify-center space-x-1.5 disabled:opacity-45 disabled:pointer-events-none`}
+                  isLocked ? '' : getSelectionTheme(selectedSelection).hover
+                } font-black text-[10px] uppercase tracking-wider py-3.5 rounded-2xl transition-all shadow-md flex items-center justify-center space-x-1.5 disabled:opacity-45`}
               >
                 {loading ? (
                   <span className="animate-pulse">Placing prediction...</span>
+                ) : isLocked ? (
+                  <span className="flex items-center space-x-1.5 text-rose-500 font-bold">
+                    <Lock className="h-3 w-3 shrink-0" />
+                    <span>Locked ({timeLeft}s)</span>
+                  </span>
                 ) : (
-                  <span className="flex items-center space-x-1.5">
+                  <span className="flex items-center space-x-1.5 text-white">
                     <Play className="h-3.5 w-3.5 fill-current shrink-0" />
                     <span>Confirm - ₹{(baseAmount * multiplier).toFixed(2)}</span>
                   </span>
@@ -599,7 +593,8 @@ export default function GameSection({
             </div>
 
           </div>
-        </>
+        </>,
+        document.getElementById('smartphone-container') || document.body
       )}
 
       {/* Success notifier popup */}
@@ -641,9 +636,9 @@ export default function GameSection({
             <table className="min-w-full divide-y divide-[#3D2C08]/15 text-[10px]">
               <thead className="bg-[#181716] text-[#E5A93B] font-extrabold font-mono uppercase tracking-wider text-[8px]">
                 <tr>
-                  <th className="px-4 py-3 text-left">Period</th>
-                  <th className="px-4 py-3 text-center">Outcome</th>
-                  <th className="px-4 py-3 text-right">Settled Time</th>
+                  <th className="px-4 py-3 text-left">Period ({roomId === '30s' ? '30 Sec' : roomId === '1m' ? '1 Min' : '3 Min'})</th>
+                  <th className="px-4 py-3 text-center">Numberball with color</th>
+                  <th className="px-4 py-3 text-right">Big/Small</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#3D2C08]/10 font-sans text-slate-300">
@@ -679,8 +674,14 @@ export default function GameSection({
                           </span>
                         </div>
                       </td>
-                      <td className="px-4 py-2.5 text-right font-mono text-slate-400">
-                        {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      <td className="px-4 py-2.5 text-right font-bold uppercase text-[9px]">
+                        <span className={`inline-block px-2 py-0.5 rounded border ${
+                          item.number >= 5 
+                            ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' 
+                            : 'bg-sky-500/10 text-sky-400 border-sky-500/20'
+                        }`}>
+                          {item.number >= 5 ? 'Big' : 'Small'}
+                        </span>
                       </td>
                     </tr>
                   );
@@ -728,8 +729,11 @@ export default function GameSection({
                     className="p-3 flex items-center justify-between cursor-pointer select-none text-[10px]"
                   >
                     <div className="space-y-0.5">
-                      <span className="font-mono text-[9px] text-[#E5A93B] font-black tracking-wider">
-                        {b.periodId}
+                      <span className="font-mono text-[9px] text-[#E5A93B] font-black tracking-wider flex items-center space-x-1.5">
+                        <span>{b.periodId}</span>
+                        <span className="bg-[#FFE194]/15 text-[#E5A93B] text-[7.5px] font-black px-1.5 py-0.5 rounded border border-[#E5A93B]/20 uppercase">
+                          {b.roomId}
+                        </span>
                       </span>
                       <div className="flex items-center space-x-1.5 text-slate-500 text-[8px] font-bold">
                         <Calendar className="h-2.5 w-2.5" />
