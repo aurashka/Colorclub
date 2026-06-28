@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { RoomType, BidRecord, UserProfile, GamePeriod } from '../types';
+import { RoomType, BidRecord, UserProfile, GamePeriod, AppConfig } from '../types';
 import { getPeriodDetails } from '../utils/gameUtils';
 import { 
   Coins, Wallet, RefreshCw, HelpCircle, Lock, Unlock, Landmark,
@@ -21,6 +21,7 @@ interface GameSectionProps {
   history: GamePeriod[];
   onPlaceBid: (selection: string, totalCost: number) => Promise<void>;
   onNavigateToWallet: (subTab: 'deposit' | 'withdrawal' | 'history') => void;
+  appConfig: AppConfig;
 }
 
 export default function GameSection({
@@ -36,6 +37,7 @@ export default function GameSection({
   history,
   onPlaceBid,
   onNavigateToWallet,
+  appConfig,
 }: GameSectionProps) {
   const [selectedSelection, setSelectedSelection] = useState<string | null>(null);
   const [multiplier, setMultiplier] = useState<number>(1);
@@ -80,7 +82,7 @@ export default function GameSection({
     if (!selectedSelection) return;
     const totalCost = baseAmount * multiplier;
     if (totalCost > user.wallet) {
-      setError(`Insufficient balance. Cost: ₹${totalCost.toFixed(2)}, Balance: ₹${user.wallet.toFixed(2)}.`);
+      setError(`Insufficient balance. Cost: ${appConfig.currencySymbol}${totalCost.toFixed(2)}, Balance: ${appConfig.currencySymbol}${user.wallet.toFixed(2)}.`);
       return;
     }
 
@@ -166,7 +168,7 @@ export default function GameSection({
 
         <div className="flex justify-between items-center">
           <span className="text-2xl font-black font-mono tracking-tight text-[#3D2C08]">
-            ₹{(user.wallet !== undefined ? user.wallet : 0).toFixed(2)}
+            {appConfig.currencySymbol}{(user.wallet !== undefined ? user.wallet : 0).toFixed(2)}
           </span>
           <div className="flex space-x-2">
             <button
@@ -430,7 +432,7 @@ export default function GameSection({
             {activeBids.map((b) => (
               <div key={b.bidId} className="flex justify-between items-center text-[10px] bg-black/40 p-2.5 rounded-lg border border-[#3D2C08]/10">
                 <span className="font-extrabold text-slate-200 font-mono">
-                  {b.selection.toUpperCase()} (₹{b.amount.toFixed(2)})
+                  {b.selection.toUpperCase()} ({appConfig.currencySymbol}{b.amount.toFixed(2)})
                 </span>
                 <span className="text-[8px] bg-amber-500/10 text-amber-400 px-2 py-0.5 rounded-full font-bold animate-pulse">Pending Outcome</span>
               </div>
@@ -495,7 +497,7 @@ export default function GameSection({
                         : 'bg-[#181716] border-[#3D2C08]/10 text-[#E5A93B] hover:border-[#E5A93B]/25'
                     }`}
                   >
-                    ₹{amt}
+                    {appConfig.currencySymbol}{amt}
                   </button>
                 ))}
               </div>
@@ -586,7 +588,7 @@ export default function GameSection({
                 ) : (
                   <span className="flex items-center space-x-1.5 text-white">
                     <Play className="h-3.5 w-3.5 fill-current shrink-0" />
-                    <span>Confirm - ₹{(baseAmount * multiplier).toFixed(2)}</span>
+                    <span>Confirm - {appConfig.currencySymbol}{(baseAmount * multiplier).toFixed(2)}</span>
                   </span>
                 )}
               </button>
@@ -712,7 +714,7 @@ export default function GameSection({
               const rewardPrefix = isWon ? '+' : '-';
               const rewardFormatted = isPending 
                 ? 'Pending' 
-                : `${rewardPrefix}₹${isWon ? b.winAmount.toFixed(2) : b.amount.toFixed(2)}`;
+                : `${rewardPrefix}${appConfig.currencySymbol}${isWon ? b.winAmount.toFixed(2) : b.amount.toFixed(2)}`;
 
               return (
                 <div 
@@ -745,7 +747,7 @@ export default function GameSection({
 
                     <div className="flex items-center space-x-4">
                       <div className="text-right">
-                        <span className="font-mono font-black text-slate-200 block">₹{b.amount.toFixed(2)}</span>
+                        <span className="font-mono font-black text-slate-200 block">{appConfig.currencySymbol}{b.amount.toFixed(2)}</span>
                         <span className={`text-[9px] font-black tracking-wide block ${
                           isPending 
                             ? 'text-amber-500 animate-pulse' 
@@ -786,7 +788,7 @@ export default function GameSection({
                           <div>
                             <span className="text-[7px] font-bold text-slate-500 uppercase tracking-widest block font-mono">Contract calculation</span>
                             <span className="font-mono text-slate-300">
-                              ₹{(b.amount / multiplier).toFixed(2)} x {multiplier} = ₹{b.amount.toFixed(2)}
+                              {appConfig.currencySymbol}{(b.amount / multiplier).toFixed(2)} x {multiplier} = {appConfig.currencySymbol}{b.amount.toFixed(2)}
                             </span>
                           </div>
                         </div>
@@ -815,7 +817,7 @@ export default function GameSection({
                           <div>
                             <span className="text-[7px] font-bold text-slate-500 uppercase tracking-widest block">Fee (Platform Tax)</span>
                             <span className="font-mono text-slate-400">
-                              ₹{(b.amount * 0.02).toFixed(2)} (2%)
+                              {appConfig.currencySymbol}{(b.amount * 0.02).toFixed(2)} (2%)
                             </span>
                           </div>
                         </div>
@@ -854,8 +856,8 @@ export default function GameSection({
                           {isPending 
                             ? 'Awaiting block settlement' 
                             : isWon 
-                              ? `+ ₹${b.winAmount.toFixed(2)} (Won!)` 
-                              : `- ₹${b.amount.toFixed(2)} (Lost)`
+                              ? `+ ${appConfig.currencySymbol}${b.winAmount.toFixed(2)} (Won!)` 
+                              : `- ${appConfig.currencySymbol}${b.amount.toFixed(2)} (Lost)`
                           }
                         </span>
                       </div>

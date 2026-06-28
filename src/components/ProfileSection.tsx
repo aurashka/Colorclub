@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
-import { UserProfile, DepositRequest, WithdrawalRequest } from '../types';
+import { UserProfile, DepositRequest, WithdrawalRequest, AppConfig } from '../types';
 import { 
   UserCircle2, Copy, Check, LogOut, ArrowDownCircle, ArrowUpCircle, 
   CreditCard, Share2, HelpCircle, FileText, Gift, Info, ShieldAlert,
   Save, Landmark, PhoneCall, ChevronRight, HelpCircle as HelpIcon
 } from 'lucide-react';
+import { db } from '../firebase';
+import { ref, get } from 'firebase/database';
 
 interface ProfileSectionProps {
   user: UserProfile;
@@ -13,6 +15,7 @@ interface ProfileSectionProps {
   onSignOut: () => void;
   onNavigateToWallet: (subTab: 'deposit' | 'withdrawal' | 'history') => void;
   onNavigateToAdmin: () => void;
+  appConfig: AppConfig;
 }
 
 export default function ProfileSection({
@@ -21,7 +24,8 @@ export default function ProfileSection({
   withdrawals,
   onSignOut,
   onNavigateToWallet,
-  onNavigateToAdmin
+  onNavigateToAdmin,
+  appConfig,
 }: ProfileSectionProps) {
   const [copied, setCopied] = useState(false);
   const [activeModal, setActiveModal] = useState<string | null>(null);
@@ -37,6 +41,30 @@ export default function ProfileSection({
   const [ifsc, setIfsc] = useState(localStorage.getItem('bank_ifsc') || '');
   const [upi, setUpi] = useState(localStorage.getItem('bank_upi') || '');
   const [bankSaved, setBankSaved] = useState('');
+
+  // Referred Users State
+  const [referredUsers, setReferredUsers] = useState<UserProfile[]>([]);
+
+  React.useEffect(() => {
+    if (activeModal === 'refer' && user.inviteCode) {
+      const usersRef = ref(db, 'users');
+      get(usersRef).then((snap) => {
+        if (snap.exists()) {
+          const allUsers: UserProfile[] = [];
+          snap.forEach((child) => {
+            const val = child.val();
+            if (val.uid === user.uid) return;
+            const matchesReferredBy = val.referredBy === user.inviteCode;
+            const matchesInviteCodeLegacy = val.inviteCode === user.inviteCode;
+            if (matchesReferredBy || matchesInviteCodeLegacy) {
+              allUsers.push(val);
+            }
+          });
+          setReferredUsers(allUsers);
+        }
+      }).catch(console.error);
+    }
+  }, [activeModal, user.inviteCode, user.uid]);
 
   const handleCopyCode = () => {
     navigator.clipboard.writeText(user.inviteCode || 'WIN777');
@@ -105,7 +133,7 @@ export default function ProfileSection({
         <div className="grid grid-cols-3 gap-1 pt-6 mt-4 text-center text-[#3D2C08]">
           <div className="space-y-0.5">
             <span className="text-sm font-black font-mono block text-[#3D2C08]">
-              ₹{(user.wallet !== undefined ? user.wallet : 0).toFixed(2)}
+              {appConfig.currencySymbol}{(user.wallet !== undefined ? user.wallet : 0).toFixed(2)}
             </span>
             <span className="text-[10px] font-bold text-[#3D2C08]/80 block uppercase tracking-wider">Balance</span>
             <button 
@@ -118,7 +146,7 @@ export default function ProfileSection({
 
           <div className="space-y-0.5 border-x border-[#3D2C08]/15">
             <span className="text-sm font-black font-mono block text-[#3D2C08]">
-              ₹0.00
+              {appConfig.currencySymbol}0.00
             </span>
             <span className="text-[10px] font-bold text-[#3D2C08]/80 block uppercase tracking-wider">Commission</span>
             <button 
@@ -131,7 +159,7 @@ export default function ProfileSection({
 
           <div className="space-y-0.5">
             <span className="text-sm font-black font-mono block text-[#3D2C08]">
-              ₹94.33
+              {appConfig.currencySymbol}94.33
             </span>
             <span className="text-[10px] font-bold text-[#3D2C08]/80 block uppercase tracking-wider">Interest</span>
             <button 
@@ -175,18 +203,8 @@ export default function ProfileSection({
         </button>
       </div>
 
-      {/* Grid of 6 Action Icons (Transparent Backgrounds, neat column alignments) */}
+      {/* Grid of 5 Action Icons (Transparent Backgrounds, neat column alignments) */}
       <div className="grid grid-cols-3 gap-y-6 gap-x-2 pt-2 text-center">
-        {/* Add Banks */}
-        <button
-          onClick={() => setActiveModal('addbank')}
-          className="flex flex-col items-center group cursor-pointer hover:scale-105 transition-transform"
-        >
-          <div className="text-[#E5A93B] mb-2">
-            <CreditCard className="h-6 w-6 stroke-[1.5]" />
-          </div>
-          <span className="text-[10px] font-bold text-[#E5A93B]/90 tracking-wide">Add Banks</span>
-        </button>
 
         {/* Refer & Earn */}
         <button
@@ -360,40 +378,61 @@ export default function ProfileSection({
             </form>
           )}
 
-          {activeModal === 'refer' && (
-            <div className="space-y-4">
-              <div className="bg-amber-500/10 border border-amber-500/20 p-4 rounded-2xl flex items-start space-x-3 text-amber-400">
-                <Share2 className="h-5 w-5 shrink-0 mt-0.5" />
-                <div className="text-[10px] space-y-1">
-                  <span className="font-bold block">Lifetime Referral Ledger:</span>
-                  <p className="leading-relaxed text-slate-300">Invite new players to join Color Club using your link. Get instant credits of 1.5% from every stake they place, regardless of winning or losing outcomes! Paid hourly directly to your ledger.</p>
+          {activeModal === 'refer' && (() => {
+            const inviteBase = appConfig.referralDomain || window.location.origin;
+            const inviteLink = inviteBase.endsWith('/') ? `${inviteBase}?ref=${user.inviteCode || 'WIN777'}` : `${inviteBase}/?ref=${user.inviteCode || 'WIN777'}`;
+            return (
+              <div className="space-y-4">
+                <div className="bg-amber-500/10 border border-amber-500/20 p-4 rounded-2xl flex items-start space-x-3 text-amber-400">
+                  <Share2 className="h-5 w-5 shrink-0 mt-0.5" />
+                  <div className="text-[10px] space-y-1">
+                    <span className="font-bold block">Lifetime Referral Ledger:</span>
+                    <p className="leading-relaxed text-slate-300">Invite new players to join our game using your link. Get instant credits from every stake they place! Paid directly to your ledger.</p>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <span className="text-[8px] font-bold text-slate-500 block uppercase tracking-widest">Share invitation URL</span>
+                  <div className="flex bg-slate-950 p-2 rounded-xl border border-slate-900 items-center justify-between">
+                    <span className="text-[10px] font-mono text-slate-400 overflow-hidden truncate mr-2">
+                      {inviteLink}
+                    </span>
+                    <button 
+                      onClick={() => {
+                        navigator.clipboard.writeText(inviteLink);
+                        alert('Invitation link copied successfully!');
+                      }}
+                      className="bg-amber-500 text-slate-950 px-3 py-1 rounded-lg text-[9px] font-bold uppercase shrink-0 cursor-pointer"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                </div>
+
+                <div className="bg-slate-900/30 p-4 rounded-xl border border-slate-900 space-y-3">
+                  <div className="text-center pb-2 border-b border-slate-900">
+                    <span className="text-[9px] font-bold text-slate-500 block uppercase">Total Referred Members</span>
+                    <span className="text-xl font-mono font-black text-amber-400">{referredUsers.length} Accounts</span>
+                  </div>
+                  
+                  {referredUsers.length > 0 && (
+                    <div className="space-y-2 max-h-48 overflow-y-auto pr-1 text-left">
+                      <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Referred Account List</span>
+                      {referredUsers.map((refUser, idx) => (
+                        <div key={refUser.uid || idx} className="flex justify-between items-center bg-slate-950 p-2.5 rounded-lg border border-slate-900/40">
+                          <div className="space-y-0.5">
+                            <span className="text-[10px] text-white font-bold block">{refUser.nickname || 'Anonym User'}</span>
+                            <span className="text-[8px] text-slate-500 font-mono block">Joined: {new Date(refUser.createdAt || Date.now()).toLocaleDateString()}</span>
+                          </div>
+                          <span className="text-[10px] text-emerald-400 font-mono font-bold">Active</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
-
-              <div className="space-y-2">
-                <span className="text-[8px] font-bold text-slate-500 block uppercase tracking-widest">Share invitation URL</span>
-                <div className="flex bg-slate-950 p-2 rounded-xl border border-slate-900 items-center justify-between">
-                  <span className="text-[10px] font-mono text-slate-400 overflow-hidden truncate mr-2">
-                    https://colorclub.win/register?ref={user.inviteCode || 'WIN777'}
-                  </span>
-                  <button 
-                    onClick={() => {
-                      navigator.clipboard.writeText(`https://colorclub.win/register?ref=${user.inviteCode || 'WIN777'}`);
-                      alert('Invitation link copied successfully!');
-                    }}
-                    className="bg-amber-500 text-slate-950 px-3 py-1 rounded-lg text-[9px] font-bold uppercase shrink-0 cursor-pointer"
-                  >
-                    Copy
-                  </button>
-                </div>
-              </div>
-
-              <div className="bg-slate-900/30 p-4 rounded-xl border border-slate-900 space-y-2 text-center">
-                <span className="text-[9px] font-bold text-slate-500 block uppercase">Total Referred Members</span>
-                <span className="text-xl font-mono font-black text-white">0 Accounts</span>
-              </div>
-            </div>
-          )}
+            );
+          })()}
 
           {activeModal === 'help' && (
             <div className="space-y-4">
@@ -480,7 +519,7 @@ export default function ProfileSection({
             <div className="space-y-3">
               <div className="bg-slate-900/60 p-4 rounded-xl border border-slate-900 text-center space-y-1">
                 <span className="text-[9px] font-bold text-slate-550 uppercase">Accumulated Annual Yield (APY)</span>
-                <span className="text-2xl font-mono font-black text-emerald-400 block">₹94.33</span>
+                <span className="text-2xl font-mono font-black text-emerald-400 block">{appConfig.currencySymbol}94.33</span>
                 <span className="text-[9px] text-slate-500 block leading-tight">Interest earned organically on active wallets at 0.03% daily return rate!</span>
               </div>
               <p className="text-[10px] text-slate-400 leading-relaxed text-center">Interest continues to accrue in real-time. Simply keep funds in your active balance to trigger the APY yield multiplier.</p>

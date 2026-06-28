@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
-import { UserProfile, DepositRequest, WithdrawalRequest, BidRecord, RoomType, GamePeriod, DepositChannel, DepositChannelField, WithdrawalField } from '../types';
+import { UserProfile, DepositRequest, WithdrawalRequest, BidRecord, RoomType, GamePeriod, DepositChannel, DepositChannelField, WithdrawalField, AppConfig } from '../types';
 import { COLOR_MAP } from '../utils/gameUtils';
-import { ShieldAlert, Users, Check, X, DollarSign, Search, Settings, Radio, Plus, Percent, Calendar, Trash2, Clock, Landmark, Layers, Send, QrCode, CreditCard } from 'lucide-react';
+import { ShieldAlert, Users, Check, X, DollarSign, Search, Settings, Radio, Plus, Percent, Calendar, Trash2, Clock, Landmark, Layers, Send, QrCode, CreditCard, Sparkles } from 'lucide-react';
+import { ref, set, update, push } from 'firebase/database';
+import { db } from '../firebase';
 
 interface AdminPanelProps {
   users: UserProfile[];
@@ -29,6 +31,8 @@ interface AdminPanelProps {
   withdrawalFields: WithdrawalField[];
   onUpdateDepositChannels: (channels: DepositChannel[]) => Promise<void>;
   onUpdateWithdrawalConfig: (fields: WithdrawalField[]) => Promise<void>;
+  appConfig: AppConfig;
+  onUpdateAppConfig: (config: AppConfig) => Promise<void>;
 }
 
 const getEmailKey = (email: string): string => {
@@ -59,9 +63,11 @@ export default function AdminPanel({
   withdrawalFields = [],
   onUpdateDepositChannels,
   onUpdateWithdrawalConfig,
+  appConfig,
+  onUpdateAppConfig,
 }: AdminPanelProps) {
   // Navigation
-  const [adminTab, setAdminTab] = useState<'transactions' | 'users' | 'manipulate' | 'payments'>('transactions');
+  const [adminTab, setAdminTab] = useState<'transactions' | 'users' | 'manipulate' | 'payments' | 'appConfig'>('transactions');
   
   // Search State
   const [userSearch, setUserSearch] = useState('');
@@ -82,6 +88,134 @@ export default function AdminPanel({
     action: 'rejected' | 'hold';
   } | null>(null);
   const [customReason, setCustomReason] = useState('');
+
+  // App Configuration Form States
+  const [cfgAppName, setCfgAppName] = useState(appConfig.appName);
+  const [cfgCurrencySymbol, setCfgCurrencySymbol] = useState(appConfig.currencySymbol || '₹');
+  const [cfgCurrencyName, setCfgCurrencyName] = useState(appConfig.currencyName || 'INR');
+  const [cfgMinDep, setCfgMinDep] = useState(appConfig.minDeposit.toString());
+  const [cfgMaxDep, setCfgMaxDep] = useState(appConfig.maxDeposit.toString());
+  const [cfgMinWith, setCfgMinWith] = useState(appConfig.minWithdrawal.toString());
+  const [cfgMaxWith, setCfgMaxWith] = useState(appConfig.maxWithdrawal.toString());
+  const [cfgTg, setCfgTg] = useState(appConfig.telegramSupport);
+  const [cfgWa, setCfgWa] = useState(appConfig.whatsappSupport);
+  const [cfgInterestRate, setCfgInterestRate] = useState((appConfig.interestRate !== undefined ? appConfig.interestRate : 0.03).toString());
+  const [cfgSupportEmail, setCfgSupportEmail] = useState(appConfig.supportEmail || 'support@lottery7.vip');
+  const [cfgSupportChatLink, setCfgSupportChatLink] = useState(appConfig.supportChatLink || '');
+  const [cfgReferralDomain, setCfgReferralDomain] = useState(appConfig.referralDomain || '');
+  const [interestLoading, setInterestLoading] = useState(false);
+  const [cfgLoading, setCfgLoading] = useState(false);
+  const [cfgSuccess, setCfgSuccess] = useState('');
+  const [cfgError, setCfgError] = useState('');
+
+  // Sync state if prop changes
+  React.useEffect(() => {
+    setCfgAppName(appConfig.appName);
+    setCfgCurrencySymbol(appConfig.currencySymbol || '₹');
+    setCfgCurrencyName(appConfig.currencyName || 'INR');
+    setCfgMinDep(appConfig.minDeposit.toString());
+    setCfgMaxDep(appConfig.maxDeposit.toString());
+    setCfgMinWith(appConfig.minWithdrawal.toString());
+    setCfgMaxWith(appConfig.maxWithdrawal.toString());
+    setCfgTg(appConfig.telegramSupport);
+    setCfgWa(appConfig.whatsappSupport);
+    setCfgInterestRate((appConfig.interestRate !== undefined ? appConfig.interestRate : 0.03).toString());
+    setCfgSupportEmail(appConfig.supportEmail || 'support@lottery7.vip');
+    setCfgSupportChatLink(appConfig.supportChatLink || '');
+    setCfgReferralDomain(appConfig.referralDomain || '');
+  }, [appConfig]);
+
+  const handleAppConfigSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCfgSuccess('');
+    setCfgError('');
+    setCfgLoading(true);
+
+    try {
+      await onUpdateAppConfig({
+        appName: cfgAppName.trim(),
+        minDeposit: Number(cfgMinDep),
+        maxDeposit: Number(cfgMaxDep),
+        minWithdrawal: Number(cfgMinWith),
+        maxWithdrawal: Number(cfgMaxWith),
+        telegramSupport: cfgTg.trim(),
+        whatsappSupport: cfgWa.trim(),
+        currencySymbol: cfgCurrencySymbol.trim(),
+        currencyName: cfgCurrencyName.trim(),
+        interestRate: Number(cfgInterestRate),
+        supportEmail: cfgSupportEmail.trim(),
+        supportChatLink: cfgSupportChatLink.trim(),
+        referralDomain: cfgReferralDomain.trim()
+      });
+      setCfgSuccess('Global App Configuration and Currency settings updated successfully!');
+    } catch (err: any) {
+      setCfgError('Failed to update: ' + err.message);
+    } finally {
+      setCfgLoading(false);
+    }
+  };
+
+  const handleDistributeInterest = async () => {
+    if (users.length === 0) {
+      alert('No users found in the system.');
+      return;
+    }
+    
+    const rate = Number(cfgInterestRate);
+    if (isNaN(rate) || rate <= 0) {
+      alert('Please configure a valid daily interest rate (> 0) first.');
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to distribute a daily interest of ${rate}% to ALL users? This will update their wallets instantly based on their current balances.`)) {
+      return;
+    }
+
+    setInterestLoading(true);
+    setCfgSuccess('');
+    setCfgError('');
+
+    try {
+      const updates: { [key: string]: any } = {};
+      const timestamp = Date.now();
+      const dateString = new Date().toDateString();
+
+      for (const u of users) {
+        if (u.wallet > 0) {
+          const interest = u.wallet * (rate / 100);
+          if (interest > 0) {
+            const emailKey = getEmailKey(u.email);
+            const newWallet = u.wallet + interest;
+            const newInterestEarned = (u.interestEarned || 0) + interest;
+
+            updates[`users/${emailKey}/wallet`] = newWallet;
+            updates[`users/${emailKey}/interestEarned`] = newInterestEarned;
+
+            // Generate a unique push key for interest history
+            const historyRef = ref(db, `users/${emailKey}/interest_history`);
+            const newHistoryKey = push(historyRef).key;
+            if (newHistoryKey) {
+              updates[`users/${emailKey}/interest_history/${newHistoryKey}`] = {
+                amount: interest,
+                rate: rate,
+                date: dateString,
+                timestamp: timestamp
+              };
+            }
+          }
+        }
+      }
+
+      updates['admin_control/app_config/lastInterestDistributed'] = timestamp;
+
+      await update(ref(db), updates);
+      setCfgSuccess(`Successfully distributed daily interest of ${rate}% to all active user wallets!`);
+    } catch (err: any) {
+      setCfgError('Interest distribution failed: ' + err.message);
+    } finally {
+      setInterestLoading(false);
+    }
+  };
 
   // ---------------- Deposit Channels Configuration State ----------------
   const [selectedChannelId, setSelectedChannelId] = useState<string>(
@@ -386,6 +520,13 @@ export default function AdminPanel({
     }
   };
 
+  const isInterestPaidToday = () => {
+    if (!appConfig.lastInterestDistributed) return false;
+    const lastDate = new Date(appConfig.lastInterestDistributed).toDateString();
+    const todayDate = new Date().toDateString();
+    return lastDate === todayDate;
+  };
+
   return (
     <div className="bg-[#1E293B] border border-slate-700/50 rounded-2xl p-6 shadow-xl font-sans space-y-8 text-slate-200">
       {/* Admin Title Bar */}
@@ -440,6 +581,16 @@ export default function AdminPanel({
           >
             Payment Gateways & Forms
           </button>
+          <button
+            onClick={() => setAdminTab('appConfig')}
+            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer min-w-max border ${
+              adminTab === 'appConfig'
+                ? 'bg-[#1E293B] text-[#d4af37] border-[#d4af37]/20 shadow-md'
+                : 'text-slate-400 border-transparent hover:text-slate-200 hover:bg-slate-800/50'
+            }`}
+          >
+            App Configuration
+          </button>
         </div>
       </div>
 
@@ -449,7 +600,7 @@ export default function AdminPanel({
           <DollarSign className="h-8 w-8 text-purple-400 bg-purple-500/10 p-1.5 rounded-lg shrink-0" />
           <div>
             <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">Approved Deposits</span>
-            <span className="text-xl font-black font-mono text-white block mt-0.5">${totalDeposited.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+            <span className="text-xl font-black font-mono text-white block mt-0.5">{appConfig.currencySymbol}{totalDeposited.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
           </div>
         </div>
 
@@ -457,7 +608,7 @@ export default function AdminPanel({
           <DollarSign className="h-8 w-8 text-rose-400 bg-rose-500/10 p-1.5 rounded-lg shrink-0" />
           <div>
             <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">Paid Withdrawals</span>
-            <span className="text-xl font-black font-mono text-white block mt-0.5">${totalWithdrawn.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+            <span className="text-xl font-black font-mono text-white block mt-0.5">{appConfig.currencySymbol}{totalWithdrawn.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
           </div>
         </div>
 
@@ -466,7 +617,7 @@ export default function AdminPanel({
           <div>
             <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">Net System Margin</span>
             <span className={`text-xl font-black font-mono block mt-0.5 ${netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-              ${netProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              {appConfig.currencySymbol}{netProfit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </span>
           </div>
         </div>
@@ -1438,6 +1589,269 @@ export default function AdminPanel({
             </form>
           </div>
 
+        </div>
+      )}
+
+      {/* -------------------- APP CONFIGURATION TAB -------------------- */}
+      {adminTab === 'appConfig' && (
+        <div className="bg-slate-900/30 border border-slate-800 p-6 rounded-2xl space-y-6 animate-in fade-in duration-300">
+          <div>
+            <h4 className="text-sm font-bold text-white tracking-wider uppercase flex items-center space-x-2">
+              <Sparkles className="h-4 w-4 text-[#d4af37]" />
+              <span>Real-time App &amp; Currency Settings</span>
+            </h4>
+            <p className="text-xs text-slate-400 mt-1">
+              Changes applied here instantly synchronize to all users via Firebase Realtime Database.
+            </p>
+          </div>
+
+          <form onSubmit={handleAppConfigSubmit} className="space-y-6">
+            {cfgSuccess && (
+              <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 p-4 rounded-xl text-xs flex items-center space-x-2">
+                <Check className="h-4 w-4 text-emerald-400" />
+                <span>{cfgSuccess}</span>
+              </div>
+            )}
+            {cfgError && (
+              <div className="bg-rose-500/10 border border-rose-500/30 text-rose-300 p-4 rounded-xl text-xs flex items-center space-x-2">
+                <X className="h-4 w-4 text-rose-400" />
+                <span>{cfgError}</span>
+              </div>
+            )}
+
+            {/* Grid for settings */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              
+              {/* App Settings Group */}
+              <div className="space-y-4 bg-slate-950/40 p-4 border border-slate-900 rounded-xl">
+                <span className="text-[10px] font-black uppercase text-slate-500 block border-b border-slate-900 pb-1.5">Brand & Metadata</span>
+                
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Application Name</label>
+                  <input
+                    type="text"
+                    required
+                    value={cfgAppName}
+                    onChange={(e) => setCfgAppName(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white focus:ring-1 focus:ring-[#d4af37]/50 focus:outline-none"
+                    placeholder="e.g. My VIP Game"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Currency Symbol</label>
+                  <input
+                    type="text"
+                    required
+                    value={cfgCurrencySymbol}
+                    onChange={(e) => setCfgCurrencySymbol(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white focus:ring-1 focus:ring-[#d4af37]/50 focus:outline-none font-mono"
+                    placeholder="e.g. ₹ or $"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Currency Name (Code)</label>
+                  <input
+                    type="text"
+                    required
+                    value={cfgCurrencyName}
+                    onChange={(e) => setCfgCurrencyName(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white focus:ring-1 focus:ring-[#d4af37]/50 focus:outline-none font-mono"
+                    placeholder="e.g. INR or USD"
+                  />
+                </div>
+              </div>
+
+              {/* Transaction Limits Group */}
+              <div className="space-y-4 bg-slate-950/40 p-4 border border-slate-900 rounded-xl">
+                <span className="text-[10px] font-black uppercase text-slate-500 block border-b border-slate-900 pb-1.5">Deposit & Payout Limits</span>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Min Deposit</label>
+                    <input
+                      type="number"
+                      required
+                      min="1"
+                      value={cfgMinDep}
+                      onChange={(e) => setCfgMinDep(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white focus:ring-1 focus:ring-[#d4af37]/50 focus:outline-none font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Max Deposit</label>
+                    <input
+                      type="number"
+                      required
+                      min="1"
+                      value={cfgMaxDep}
+                      onChange={(e) => setCfgMaxDep(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white focus:ring-1 focus:ring-[#d4af37]/50 focus:outline-none font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Min Withdrawal</label>
+                    <input
+                      type="number"
+                      required
+                      min="1"
+                      value={cfgMinWith}
+                      onChange={(e) => setCfgMinWith(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white focus:ring-1 focus:ring-[#d4af37]/50 focus:outline-none font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Max Withdrawal</label>
+                    <input
+                      type="number"
+                      required
+                      min="1"
+                      value={cfgMaxWith}
+                      onChange={(e) => setCfgMaxWith(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white focus:ring-1 focus:ring-[#d4af37]/50 focus:outline-none font-mono"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Support Links Group */}
+              <div className="space-y-4 bg-slate-950/40 p-4 border border-slate-900 rounded-xl md:col-span-2">
+                <span className="text-[10px] font-black uppercase text-slate-400 block border-b border-slate-900 pb-1.5">Support Channels & Help Options</span>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Telegram Support Username / Link</label>
+                    <input
+                      type="text"
+                      value={cfgTg}
+                      onChange={(e) => setCfgTg(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white focus:ring-1 focus:ring-[#d4af37]/50 focus:outline-none"
+                      placeholder="e.g. Telegram username or link"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">WhatsApp Support Number / Link</label>
+                    <input
+                      type="text"
+                      value={cfgWa}
+                      onChange={(e) => setCfgWa(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white focus:ring-1 focus:ring-[#d4af37]/50 focus:outline-none"
+                      placeholder="e.g. WhatsApp phone or api link"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Support Email Address</label>
+                    <input
+                      type="email"
+                      value={cfgSupportEmail}
+                      onChange={(e) => setCfgSupportEmail(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white focus:ring-1 focus:ring-[#d4af37]/50 focus:outline-none"
+                      placeholder="support@lottery7.vip"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Support Live Chat Link</label>
+                    <input
+                      type="text"
+                      value={cfgSupportChatLink}
+                      onChange={(e) => setCfgSupportChatLink(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white focus:ring-1 focus:ring-[#d4af37]/50 focus:outline-none"
+                      placeholder="Custom link, if any, or leave empty for built-in support chat"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Custom Referral Domain / URL Base</label>
+                    <input
+                      type="text"
+                      value={cfgReferralDomain}
+                      onChange={(e) => setCfgReferralDomain(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white focus:ring-1 focus:ring-[#d4af37]/50 focus:outline-none"
+                      placeholder="e.g. https://mycustomdomain.com"
+                    />
+                    <p className="text-[9px] text-slate-500 mt-1">If set, users' invite links will use this domain instead of the default current domain.</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Daily Interest & Distribution Control */}
+              <div className="space-y-4 bg-slate-950/40 p-4 border border-slate-900 rounded-xl md:col-span-2">
+                <span className="text-[10px] font-black uppercase text-[#d4af37] block border-b border-[#d4af37]/20 pb-1.5 flex items-center space-x-1">
+                  <Percent className="h-3 w-3 text-amber-400" />
+                  <span>Daily Interest Distribution Control</span>
+                </span>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Daily Interest Rate (%)</label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        step="0.001"
+                        required
+                        value={cfgInterestRate}
+                        onChange={(e) => setCfgInterestRate(e.target.value)}
+                        className="w-full pl-3 pr-8 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white focus:ring-1 focus:ring-[#d4af37]/50 focus:outline-none font-mono"
+                        placeholder="e.g. 0.03"
+                      />
+                      <span className="absolute right-3 top-2 text-xs text-slate-500">%</span>
+                    </div>
+                    <p className="text-[9px] text-slate-500 mt-1">
+                      Increases every user's wallet dynamically by this daily % rate.
+                    </p>
+                  </div>
+
+                  <div>
+                    {isInterestPaidToday() ? (
+                      <div className="bg-slate-900/60 border border-emerald-500/20 text-slate-400 p-2 rounded-xl text-center text-xs flex items-center justify-center space-x-2">
+                        <Check className="h-4 w-4 text-emerald-400 animate-pulse" />
+                        <span>Interest distributed today at {new Date(appConfig.lastInterestDistributed!).toLocaleTimeString()}</span>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleDistributeInterest}
+                        disabled={interestLoading}
+                        className="w-full bg-gradient-to-r from-amber-500 to-yellow-600 hover:from-amber-400 hover:to-yellow-500 text-slate-950 font-black py-2 px-4 rounded-xl text-xs uppercase tracking-wider cursor-pointer flex items-center justify-center space-x-1.5 transition-all shadow-lg shadow-amber-950/20 active:scale-95 disabled:opacity-50"
+                      >
+                        {interestLoading ? (
+                          <span>Processing distribution...</span>
+                        ) : (
+                          <>
+                            <Sparkles className="h-4 w-4 text-slate-950 animate-pulse" />
+                            <span>Distribute {cfgInterestRate}% Interest to All Users Now</span>
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            <button
+              type="submit"
+              disabled={cfgLoading}
+              className="w-full bg-[#d4af37] text-slate-950 hover:bg-[#ebd06a] font-black py-3 px-4 rounded-xl text-xs uppercase tracking-wider cursor-pointer flex items-center justify-center space-x-1.5 transition-colors disabled:opacity-50"
+            >
+              {cfgLoading ? (
+                <span>Saving modifications...</span>
+              ) : (
+                <>
+                  <Check className="h-4 w-4" />
+                  <span>Update Firebase Realtime Database</span>
+                </>
+              )}
+            </button>
+          </form>
         </div>
       )}
     </div>

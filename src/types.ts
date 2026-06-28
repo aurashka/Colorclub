@@ -8,9 +8,11 @@ export interface UserProfile {
   nickname: string;
   wallet: number;
   inviteCode?: string;
+  referredBy?: string;
   role?: 'admin' | 'user';
   isAdmin?: boolean;
   createdAt: number;
+  interestEarned?: number;
 }
 
 export interface GamePeriod {
@@ -106,4 +108,21 @@ export interface AdminSettings {
   activePeriodOverride?: {
     [roomId: string]: number; // roomId -> overridden number (0-9)
   };
+}
+
+export interface AppConfig {
+  appName: string;
+  minDeposit: number;
+  maxDeposit: number;
+  minWithdrawal: number;
+  maxWithdrawal: number;
+  telegramSupport: string;
+  whatsappSupport: string;
+  currencySymbol: string;
+  currencyName: string;
+  interestRate?: number;
+  lastInterestDistributed?: number;
+  supportEmail?: string;
+  supportChatLink?: string;
+  referralDomain?: string;
 }

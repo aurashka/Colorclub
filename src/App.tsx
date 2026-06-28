@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from './firebase';
 import { ref, onValue, set, get, update, remove } from 'firebase/database';
-import { RoomType, UserProfile, GamePeriod, BidRecord, DepositRequest, WithdrawalRequest, DepositChannel, DepositChannelField, WithdrawalField } from './types';
+import { RoomType, UserProfile, GamePeriod, BidRecord, DepositRequest, WithdrawalRequest, DepositChannel, DepositChannelField, WithdrawalField, AppConfig } from './types';
 import { getPeriodDetails, generatePeriodResult, calculateBidResult, getRecentPeriodIds, getDeterministicResult, getDeterministicNumber } from './utils/gameUtils';
 
 // Components
@@ -11,6 +11,7 @@ import GameSection from './components/GameSection';
 import ProfileSection from './components/ProfileSection';
 import WalletSection from './components/WalletSection';
 import AdminPanel from './components/AdminPanel';
+import CompleteProfileModal from './components/CompleteProfileModal';
 
 import { 
   Home as HomeIcon, Sparkles, User, ArrowLeft, ShieldCheck, 
@@ -20,9 +21,21 @@ import {
 export default function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [activeTab, setActiveTab] = useState<'home' | 'game' | 'profile'>('home');
-  const [activeSubView, setActiveSubView] = useState<'wallet' | 'admin' | null>(null);
+  const [activeSubView, setActiveSubView] = useState<'deposit' | 'withdrawal' | 'admin' | null>(null);
   const [walletSubTab, setWalletSubTab] = useState<'deposit' | 'withdrawal' | 'history'>('deposit');
   const [roomId, setRoomId] = useState<RoomType>('1m');
+  
+  const [appConfig, setAppConfig] = useState<AppConfig>({
+    appName: 'L7 LOTTERY7',
+    minDeposit: 100,
+    maxDeposit: 500000,
+    minWithdrawal: 200,
+    maxWithdrawal: 100000,
+    telegramSupport: '@customer_service',
+    whatsappSupport: '+919876543210',
+    currencySymbol: '₹',
+    currencyName: 'INR'
+  });
 
   // Real-time synced state lists
   const [usersList, setUsersList] = useState<UserProfile[]>([]);
@@ -245,7 +258,14 @@ export default function App() {
     const gatewayRef = ref(db, 'admin_control/deposit_channels');
     const unsubscribeGateway = onValue(gatewayRef, (snap) => {
       if (snap.exists()) {
-        setDepositChannels(snap.val() || []);
+        const val = snap.val();
+        if (Array.isArray(val)) {
+          setDepositChannels(val.filter(Boolean));
+        } else if (typeof val === 'object' && val !== null) {
+          setDepositChannels(Object.values(val));
+        } else {
+          setDepositChannels([]);
+        }
       } else {
         setDepositChannels([
           {
@@ -302,6 +322,49 @@ export default function App() {
       }
     });
 
+    // App Configuration Config Subscriber and Automatic Seeding
+    const appConfigRef = ref(db, 'admin_control/app_config');
+    const unsubscribeAppConfig = onValue(appConfigRef, (snap) => {
+      if (snap.exists()) {
+        const val = snap.val();
+        setAppConfig({
+          appName: val.appName || 'L7 LOTTERY7',
+          minDeposit: val.minDeposit !== undefined ? Number(val.minDeposit) : 100,
+          maxDeposit: val.maxDeposit !== undefined ? Number(val.maxDeposit) : 500000,
+          minWithdrawal: val.minWithdrawal !== undefined ? Number(val.minWithdrawal) : 200,
+          maxWithdrawal: val.maxWithdrawal !== undefined ? Number(val.maxWithdrawal) : 100000,
+          telegramSupport: val.telegramSupport || '@customer_service',
+          whatsappSupport: val.whatsappSupport || '+919876543210',
+          currencySymbol: val.currencySymbol || '₹',
+          currencyName: val.currencyName || 'INR',
+          interestRate: val.interestRate !== undefined ? Number(val.interestRate) : 0.03,
+          lastInterestDistributed: val.lastInterestDistributed || 0,
+          supportEmail: val.supportEmail || 'support@lottery7.vip',
+          supportChatLink: val.supportChatLink || '',
+          referralDomain: val.referralDomain || ''
+        });
+      } else {
+        const defaults: AppConfig = {
+          appName: 'L7 LOTTERY7',
+          minDeposit: 100,
+          maxDeposit: 500000,
+          minWithdrawal: 200,
+          maxWithdrawal: 100000,
+          telegramSupport: '@customer_service',
+          whatsappSupport: '+919876543210',
+          currencySymbol: '₹',
+          currencyName: 'INR',
+          interestRate: 0.03,
+          lastInterestDistributed: 0,
+          supportEmail: 'support@lottery7.vip',
+          supportChatLink: '',
+          referralDomain: ''
+        };
+        set(appConfigRef, defaults);
+        setAppConfig(defaults);
+      }
+    });
+
     return () => {
       unsubscribeHistory();
       unsubscribeDeposits();
@@ -310,6 +373,7 @@ export default function App() {
       unsubscribePresets();
       unsubscribeGateway();
       unsubscribeWithConfig();
+      unsubscribeAppConfig();
     };
   }, []);
 
@@ -743,13 +807,21 @@ export default function App() {
   const handleUpdateDepositChannels = async (channels: DepositChannel[]) => {
     if (user?.role !== 'admin') return;
     const gatewayRef = ref(db, 'admin_control/deposit_channels');
+    await remove(gatewayRef);
     await set(gatewayRef, channels);
   };
 
   const handleUpdateWithdrawalConfig = async (fields: WithdrawalField[]) => {
     if (user?.role !== 'admin') return;
     const configRef = ref(db, 'admin_control/withdrawal_config');
+    await remove(configRef);
     await set(configRef, fields);
+  };
+
+  const handleUpdateAppConfig = async (config: AppConfig) => {
+    if (user?.role !== 'admin') return;
+    const configRef = ref(db, 'admin_control/app_config');
+    await set(configRef, config);
   };
 
   // Unauthenticated view (Wrapped in smartphone simulator)
@@ -782,8 +854,8 @@ export default function App() {
         {/* Scrollable Viewport (Height reserved for bottom bar if no subview is open) */}
         <div className={`flex-1 overflow-y-auto overflow-x-hidden ${activeSubView ? 'pb-4' : 'pb-20'} custom-scrollbar relative bg-[#0D121F]`}>
           
-          {/* Subview Layer: Wallet */}
-          {activeSubView === 'wallet' && (
+          {/* Subview Layer: Wallet (Deposit / Withdrawal Separated) */}
+          {(activeSubView === 'deposit' || activeSubView === 'withdrawal') && (
             <div className="animate-in fade-in duration-300">
               {/* Back Header */}
               <div className="flex items-center space-x-2 bg-[#0B0F17] p-4 sticky top-0 border-b border-slate-900/80 z-30">
@@ -794,7 +866,7 @@ export default function App() {
                   <ChevronLeft className="h-5 w-5" />
                 </button>
                 <span className="text-xs font-black uppercase text-amber-400 tracking-wider">
-                  Wallet Settle Centre
+                  {activeSubView === 'deposit' ? 'Recharge Deposit Center' : 'Withdrawal Payout Center'}
                 </span>
               </div>
               <div className="p-1">
@@ -806,6 +878,8 @@ export default function App() {
                   onWithdrawalSubmit={handleWithdrawalSubmit}
                   depositChannels={depositChannels}
                   withdrawalFields={withdrawalFields}
+                  mode={activeSubView}
+                  appConfig={appConfig}
                 />
               </div>
             </div>
@@ -849,6 +923,8 @@ export default function App() {
                   withdrawalFields={withdrawalFields}
                   onUpdateDepositChannels={handleUpdateDepositChannels}
                   onUpdateWithdrawalConfig={handleUpdateWithdrawalConfig}
+                  appConfig={appConfig}
+                  onUpdateAppConfig={handleUpdateAppConfig}
                 />
               </div>
             </div>
@@ -877,8 +953,9 @@ export default function App() {
                   history={unifiedHistory}
                   onPlaceBid={handlePlaceBid}
                   onNavigateToWallet={(subTab) => {
-                    setActiveSubView('wallet');
+                    setActiveSubView(subTab === 'withdrawal' ? 'withdrawal' : 'deposit');
                   }}
+                  appConfig={appConfig}
                 />
               )}
               {activeTab === 'profile' && (
@@ -888,9 +965,10 @@ export default function App() {
                   withdrawals={withdrawals}
                   onSignOut={handleSignOut}
                   onNavigateToWallet={(subTab) => {
-                    setActiveSubView('wallet');
+                    setActiveSubView(subTab === 'withdrawal' ? 'withdrawal' : 'deposit');
                   }}
                   onNavigateToAdmin={() => setActiveSubView('admin')}
+                  appConfig={appConfig}
                 />
               )}
             </>
@@ -955,6 +1033,16 @@ export default function App() {
 
         {/* Floating Android Gesture Navigation Pill Indicator */}
         <div className="absolute bottom-1 left-1/2 transform -translate-x-1/2 w-28 h-1 bg-slate-800 rounded-full select-none pointer-events-none z-50 opacity-40" />
+
+        {/* Dynamic Complete Profile Modal popup when user profile missing fields */}
+        {user && (
+          <CompleteProfileModal 
+            user={user} 
+            onUpdateSuccess={(updatedUser) => {
+              setUser(updatedUser);
+            }} 
+          />
+        )}
 
       </div>
     </div>

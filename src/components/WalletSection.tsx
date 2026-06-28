@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { DepositRequest, WithdrawalRequest, UserProfile, DepositChannel, DepositChannelField, WithdrawalField } from '../types';
+import { DepositRequest, WithdrawalRequest, UserProfile, DepositChannel, DepositChannelField, WithdrawalField, AppConfig } from '../types';
 import { Wallet, ArrowDownCircle, ArrowUpCircle, Clock, CheckCircle2, XCircle, AlertCircle, RefreshCw, QrCode, CreditCard, Send, Check, Landmark } from 'lucide-react';
+import { db } from '../firebase';
+import { ref, update, get } from 'firebase/database';
 
 interface WalletSectionProps {
   user: UserProfile;
@@ -10,15 +12,17 @@ interface WalletSectionProps {
   onWithdrawalSubmit: (amount: number, fieldsData: { [key: string]: string }) => Promise<void>;
   depositChannels: DepositChannel[];
   withdrawalFields: WithdrawalField[];
+  mode?: 'deposit' | 'withdrawal' | 'all';
+  appConfig: AppConfig;
 }
 
 const PRESET_AMOUNTS = [
-  { amount: 200, label: '₹200', desc: '+20% Bonus' },
-  { amount: 300, label: '₹300', desc: '+20% Bonus', hot: true },
-  { amount: 500, label: '₹500', desc: '+20% Bonus' },
-  { amount: 1000, label: '₹1K', desc: '+20% Bonus' },
-  { amount: 5000, label: '₹5K', desc: '+20% Bonus' },
-  { amount: 50000, label: '₹50K', desc: '+20% Bonus' },
+  { amount: 200, label: '200', desc: 'Instant' },
+  { amount: 300, label: '300', desc: 'Instant', hot: true },
+  { amount: 500, label: '500', desc: 'Instant' },
+  { amount: 1000, label: '1K', desc: 'Instant' },
+  { amount: 5000, label: '5K', desc: 'Instant' },
+  { amount: 50000, label: '50K', desc: 'Instant' },
 ];
 
 export default function WalletSection({
@@ -29,8 +33,21 @@ export default function WalletSection({
   onWithdrawalSubmit,
   depositChannels = [],
   withdrawalFields,
+  mode = 'all',
+  appConfig,
 }: WalletSectionProps) {
-  const [activeSubTab, setActiveSubTab] = useState<'deposit' | 'withdrawal' | 'history'>('deposit');
+  const [activeSubTab, setActiveSubTab] = useState<'deposit' | 'withdrawal' | 'history'>(
+    mode === 'withdrawal' ? 'withdrawal' : 'deposit'
+  );
+
+  // Sync tab if mode prop changes
+  useEffect(() => {
+    if (mode === 'withdrawal') {
+      setActiveSubTab('withdrawal');
+    } else if (mode === 'deposit') {
+      setActiveSubTab('deposit');
+    }
+  }, [mode]);
   
   // Balance refreshing animation simulation
   const [refreshing, setRefreshing] = useState(false);
@@ -52,6 +69,43 @@ export default function WalletSection({
 
   // Clipboard copy feedback
   const [copiedText, setCopiedText] = useState<string | null>(null);
+
+  // Saved Payout Details State
+  const [savedDetails, setSavedDetails] = useState<{ [key: string]: string } | null>(null);
+
+  useEffect(() => {
+    // Try local storage first
+    try {
+      const stored = localStorage.getItem(`saved_withdrawal_details_${user.uid}`);
+      if (stored) {
+        setSavedDetails(JSON.parse(stored));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+
+    // Load from Firebase
+    const emailKey = user.email ? user.email.toLowerCase().trim().replace(/@/g, '_at_').replace(/\./g, '_') : '';
+    if (emailKey) {
+      const savedRef = ref(db, `users/${emailKey}/saved_withdrawal_details`);
+      get(savedRef).then((snap) => {
+        if (snap.exists()) {
+          const data = snap.val();
+          setSavedDetails(data);
+          localStorage.setItem(`saved_withdrawal_details_${user.uid}`, JSON.stringify(data));
+        }
+      }).catch(console.error);
+    }
+  }, [user.uid, user.email]);
+
+  const handleAutofillSavedDetails = () => {
+    if (savedDetails) {
+      setCustomFieldsData(prev => ({
+        ...prev,
+        ...savedDetails
+      }));
+    }
+  };
 
   // Initialize selected deposit channel
   useEffect(() => {
@@ -105,7 +159,7 @@ export default function WalletSection({
     .sort((a, b) => b.createdAt - a.createdAt);
 
   const getBonusMultiplier = () => {
-    return selectedChannel ? selectedChannel.bonus : 0.20;
+    return selectedChannel ? (selectedChannel.bonus || 0) : 0;
   };
 
   const getChannelName = () => {
@@ -130,8 +184,12 @@ export default function WalletSection({
     setDepSuccess('');
     
     const amt = parseFloat(depAmount);
-    if (isNaN(amt) || amt < 100) {
-      setDepError('Minimum recharge amount is ₹100.');
+    if (isNaN(amt) || amt < appConfig.minDeposit) {
+      setDepError(`Minimum recharge amount is ${appConfig.currencySymbol}${appConfig.minDeposit}.`);
+      return;
+    }
+    if (amt > appConfig.maxDeposit) {
+      setDepError(`Maximum recharge amount is ${appConfig.currencySymbol}${appConfig.maxDeposit}.`);
       return;
     }
 
@@ -189,11 +247,15 @@ export default function WalletSection({
       return;
     }
     if (amt > user.wallet) {
-      setWithError(`Insufficient balance. Maximum available: ₹${user.wallet.toFixed(2)}`);
+      setWithError(`Insufficient balance. Maximum available: ${appConfig.currencySymbol}${user.wallet.toFixed(2)}`);
       return;
     }
-    if (amt < 200) {
-      setWithError('Minimum withdrawal amount is ₹200.00.');
+    if (amt < appConfig.minWithdrawal) {
+      setWithError(`Minimum withdrawal amount is ${appConfig.currencySymbol}${appConfig.minWithdrawal.toFixed(2)}.`);
+      return;
+    }
+    if (amt > appConfig.maxWithdrawal) {
+      setWithError(`Maximum withdrawal amount is ${appConfig.currencySymbol}${appConfig.maxWithdrawal.toFixed(2)}.`);
       return;
     }
 
@@ -208,6 +270,20 @@ export default function WalletSection({
     setWithLoading(true);
     try {
       await onWithdrawalSubmit(amt, customFieldsData);
+      
+      // Save details to localStorage and Firebase
+      try {
+        localStorage.setItem(`saved_withdrawal_details_${user.uid}`, JSON.stringify(customFieldsData));
+        setSavedDetails(customFieldsData);
+        
+        const emailKey = user.email ? user.email.toLowerCase().trim().replace(/@/g, '_at_').replace(/\./g, '_') : '';
+        if (emailKey) {
+          update(ref(db, `users/${emailKey}/saved_withdrawal_details`), customFieldsData).catch(console.error);
+        }
+      } catch (e) {
+        console.error('Failed to auto-save withdrawal fields:', e);
+      }
+
       setWithSuccess('Withdrawal request locked! The balance has been safely held, and our payout desk will dispatch the payment.');
       setWithAmount('');
       // reset fields
@@ -267,11 +343,23 @@ export default function WalletSection({
     }
   };
 
+  const getContainerBg = () => {
+    if (activeSubTab === 'deposit') return 'bg-[#08120C] text-slate-100';
+    if (activeSubTab === 'withdrawal') return 'bg-[#0D0A1C] text-slate-100';
+    return 'bg-[#0B0E14] text-slate-100';
+  };
+
+  const getHeaderCardBg = () => {
+    if (activeSubTab === 'deposit') return 'bg-gradient-to-br from-[#122A1B] to-[#08150D] border-emerald-500/25 shadow-emerald-950/20';
+    if (activeSubTab === 'withdrawal') return 'bg-gradient-to-br from-[#20153D] to-[#0F081E] border-purple-500/25 shadow-purple-950/20';
+    return 'bg-gradient-to-br from-[#121824] to-[#0A0D15] border-slate-800/40';
+  };
+
   return (
-    <div className="bg-[#0D121F] font-sans text-slate-200 p-4 space-y-5 select-none min-h-screen pb-24">
+    <div className={`font-sans p-4 space-y-5 select-none min-h-screen pb-24 transition-colors duration-500 ${getContainerBg()}`}>
       
       {/* Golden Wallet Header Card */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#1E293B] to-[#0F172A] border border-[#d4af37]/20 p-5 shadow-xl">
+      <div className={`relative overflow-hidden rounded-2xl p-5 shadow-xl transition-all duration-500 border ${getHeaderCardBg()}`}>
         <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-[#d4af37]/10 to-transparent rounded-full blur-2xl" />
         
         <div className="flex justify-between items-start">
@@ -279,7 +367,7 @@ export default function WalletSection({
             <span className="text-[10px] uppercase tracking-widest text-[#d4af37] font-black block">Available Balance</span>
             <div className="flex items-center space-x-3 mt-1">
               <span className="text-3xl font-black font-mono text-white tracking-tight">
-                ₹{user.wallet !== undefined ? user.wallet.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}
+                {appConfig.currencySymbol}{user.wallet !== undefined ? user.wallet.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}
               </span>
               <button 
                 onClick={triggerBalanceRefresh}
@@ -298,37 +386,43 @@ export default function WalletSection({
         </div>
       </div>
 
-      {/* Internal Tab Navigation */}
-      <div className="grid grid-cols-3 p-1 bg-slate-950/60 rounded-xl border border-slate-900/80">
-        <button
-          onClick={() => setActiveSubTab('deposit')}
-          className={`py-2.5 text-[11px] font-black uppercase tracking-wider rounded-lg transition-all cursor-pointer flex flex-col items-center justify-center space-y-1 ${
-            activeSubTab === 'deposit'
-              ? 'bg-gradient-to-r from-amber-500/15 to-[#d4af37]/10 text-[#d4af37] border border-[#d4af37]/20'
-              : 'text-slate-500 border-transparent hover:text-slate-350'
-          }`}
-        >
-          <ArrowDownCircle className="h-4 w-4" />
-          <span>Deposit</span>
-        </button>
+      {/* Internal Tab Navigation (Dynamic based on mode) */}
+      <div className={`grid p-1 bg-slate-950/60 rounded-xl border border-slate-900/80 ${
+        mode === 'all' ? 'grid-cols-3' : 'grid-cols-2'
+      }`}>
+        {(mode === 'all' || mode === 'deposit') && (
+          <button
+            onClick={() => setActiveSubTab('deposit')}
+            className={`py-2.5 text-[11px] font-black uppercase tracking-wider rounded-lg transition-all cursor-pointer flex flex-col items-center justify-center space-y-1 ${
+              activeSubTab === 'deposit'
+                ? 'bg-gradient-to-r from-[#E5A93B]/20 to-[#C18F2E]/10 text-[#E5A93B] border border-[#E5A93B]/20'
+                : 'text-slate-500 border-transparent hover:text-slate-350'
+            }`}
+          >
+            <ArrowDownCircle className="h-4 w-4" />
+            <span>Deposit</span>
+          </button>
+        )}
 
-        <button
-          onClick={() => setActiveSubTab('withdrawal')}
-          className={`py-2.5 text-[11px] font-black uppercase tracking-wider rounded-lg transition-all cursor-pointer flex flex-col items-center justify-center space-y-1 ${
-            activeSubTab === 'withdrawal'
-              ? 'bg-gradient-to-r from-amber-500/15 to-[#d4af37]/10 text-[#d4af37] border border-[#d4af37]/20'
-              : 'text-slate-500 border-transparent hover:text-slate-350'
-          }`}
-        >
-          <ArrowUpCircle className="h-4 w-4" />
-          <span>Withdraw</span>
-        </button>
+        {(mode === 'all' || mode === 'withdrawal') && (
+          <button
+            onClick={() => setActiveSubTab('withdrawal')}
+            className={`py-2.5 text-[11px] font-black uppercase tracking-wider rounded-lg transition-all cursor-pointer flex flex-col items-center justify-center space-y-1 ${
+              activeSubTab === 'withdrawal'
+                ? 'bg-gradient-to-r from-[#E5A93B]/20 to-[#C18F2E]/10 text-[#E5A93B] border border-[#E5A93B]/20'
+                : 'text-slate-500 border-transparent hover:text-slate-350'
+            }`}
+          >
+            <ArrowUpCircle className="h-4 w-4" />
+            <span>Withdraw</span>
+          </button>
+        )}
 
         <button
           onClick={() => setActiveSubTab('history')}
           className={`py-2.5 text-[11px] font-black uppercase tracking-wider rounded-lg transition-all cursor-pointer flex flex-col items-center justify-center space-y-1 ${
             activeSubTab === 'history'
-              ? 'bg-gradient-to-r from-amber-500/15 to-[#d4af37]/10 text-[#d4af37] border border-[#d4af37]/20'
+              ? 'bg-gradient-to-r from-[#E5A93B]/20 to-[#C18F2E]/10 text-[#E5A93B] border border-[#E5A93B]/20'
               : 'text-slate-500 border-transparent hover:text-slate-350'
           }`}
         >
@@ -397,7 +491,7 @@ export default function WalletSection({
                       : 'border-slate-800 bg-slate-900/30 text-slate-300 hover:bg-slate-850'
                   }`}
                 >
-                  <div className="text-xs">₹{p.amount.toLocaleString('en-IN')}</div>
+                  <div className="text-xs">{appConfig.currencySymbol}{p.amount.toLocaleString('en-IN')}</div>
                   <div className="text-[7px] text-slate-500 mt-0.5">{p.desc}</div>
                   {p.hot && (
                     <span className="absolute -top-1.5 -right-1 text-[7px] px-1 font-sans uppercase font-black bg-[#d4af37] text-slate-950 rounded tracking-wider scale-90 shadow-md">HOT</span>
@@ -541,17 +635,17 @@ export default function WalletSection({
               <div className="border-t border-slate-900 pt-3.5 space-y-1.5 text-xs">
                 <div className="flex justify-between">
                   <span className="text-slate-500 font-bold uppercase text-[9px]">Recharge Base:</span>
-                  <span className="font-mono text-white">₹{parseFloat(depAmount) ? parseFloat(depAmount).toFixed(2) : '0.00'}</span>
+                  <span className="font-mono text-white">{appConfig.currencySymbol}{parseFloat(depAmount) ? parseFloat(depAmount).toFixed(2) : '0.00'}</span>
                 </div>
                 {getBonusMultiplier() > 0 && (
                   <div className="flex justify-between text-[#d4af37]">
-                    <span className="font-bold uppercase text-[9px]">Channel Bonus (+{(getBonusMultiplier()*100).toFixed(0)}%):</span>
-                    <span className="font-mono">+₹{calculatedBonus().toFixed(2)}</span>
+                     <span className="font-bold uppercase text-[9px]">Channel Bonus (+{(getBonusMultiplier()*100).toFixed(0)}%):</span>
+                    <span className="font-mono">+{appConfig.currencySymbol}{calculatedBonus().toFixed(2)}</span>
                   </div>
                 )}
                 <div className="flex justify-between text-white font-bold border-t border-slate-900 pt-2 text-sm">
                   <span className="uppercase text-[10px] tracking-wider text-slate-300">Total credited:</span>
-                  <span className="font-mono text-[#d4af37]">₹{calculatedTotal().toFixed(2)}</span>
+                  <span className="font-mono text-[#d4af37]">{appConfig.currencySymbol}{calculatedTotal().toFixed(2)}</span>
                 </div>
               </div>
             </div>
@@ -573,12 +667,12 @@ export default function WalletSection({
           {/* Form Fields & Submit Button */}
           <div className="space-y-4">
             <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Recharge Amount (₹)</label>
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Recharge Amount ({appConfig.currencySymbol})</label>
               <input
                 type="number"
-                min="100"
+                min={appConfig.minDeposit}
                 required
-                placeholder="Minimum ₹100"
+                placeholder={`Minimum ${appConfig.currencySymbol}${appConfig.minDeposit}`}
                 value={depAmount}
                 onChange={(e) => setDepAmount(e.target.value)}
                 className="block w-full px-4 py-3 bg-slate-950 border border-slate-900 rounded-xl focus:outline-none focus:ring-1 focus:ring-[#d4af37]/50 text-white text-base font-mono font-bold"
@@ -628,7 +722,7 @@ export default function WalletSection({
           <div className="bg-slate-950/80 border border-slate-900 p-4 rounded-xl text-xs text-slate-400 space-y-2.5 leading-relaxed">
             <span className="font-black block text-white uppercase tracking-wider">💳 India Banking Payout Policies:</span>
             <p>• Fast withdrawals are transferred directly into your dynamic Indian bank ledger or UPI address.</p>
-            <p>• Withdrawals are dispatched within 1 - 4 hours. Daily maximum: ₹1,00,000. Minimum: ₹200.00.</p>
+            <p>• Withdrawals are dispatched within 1 - 4 hours. Daily maximum: {appConfig.currencySymbol}{appConfig.maxWithdrawal.toLocaleString('en-IN')}. Minimum: {appConfig.currencySymbol}{appConfig.minWithdrawal.toFixed(2)}.</p>
           </div>
 
           {withError && (
@@ -646,12 +740,12 @@ export default function WalletSection({
 
           {/* Amount input */}
           <div>
-            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Amount to Withdraw (₹)</label>
+            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Amount to Withdraw ({appConfig.currencySymbol})</label>
             <input
               type="number"
-              min="200"
+              min={appConfig.minWithdrawal}
               required
-              placeholder="Minimum ₹200"
+              placeholder={`Minimum ${appConfig.currencySymbol}${appConfig.minWithdrawal}`}
               value={withAmount}
               onChange={(e) => setWithAmount(e.target.value)}
               className="block w-full px-4 py-3 bg-slate-950 border border-slate-900 rounded-xl focus:outline-none focus:ring-1 focus:ring-[#d4af37]/50 text-white text-base font-mono font-bold"
@@ -660,7 +754,19 @@ export default function WalletSection({
 
           {/* Dynamic withdrawal fields as configured by the admin */}
           <div className="space-y-4 pt-1">
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block border-b border-slate-900 pb-1.5">Required Payout Details</span>
+            <div className="flex items-center justify-between border-b border-slate-900 pb-1.5">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Required Payout Details</span>
+              {savedDetails && (
+                <button
+                  type="button"
+                  onClick={handleAutofillSavedDetails}
+                  className="text-[10px] font-bold text-[#d4af37] hover:text-amber-400 cursor-pointer flex items-center space-x-1 transition-colors bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-lg"
+                >
+                  <Check className="h-3 w-3 shrink-0" />
+                  <span>Autofill Saved Details</span>
+                </button>
+              )}
+            </div>
             
             <div className="bg-slate-900/20 border border-slate-900 p-4 rounded-xl space-y-3.5">
               {withdrawalFields.length === 0 ? (
@@ -704,84 +810,88 @@ export default function WalletSection({
         <div className="space-y-6 animate-in fade-in duration-300">
           
           {/* Cash Deposits History */}
-          <div className="space-y-2.5">
-            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 block">Recharge Cash History</span>
-            {userDeposits.length === 0 ? (
-              <p className="text-xs text-slate-500 bg-slate-900/30 p-4 rounded-xl border border-slate-900 italic">No deposit records found in your journal.</p>
-            ) : (
-              <div className="overflow-x-auto border border-slate-900 rounded-xl bg-slate-950/40">
-                <table className="min-w-full divide-y divide-slate-900 text-left text-xs">
-                  <thead className="bg-slate-900/60 text-[9px] text-slate-500 uppercase tracking-widest font-mono font-bold">
-                    <tr>
-                      <th className="px-4 py-3">Reference No</th>
-                      <th className="px-4 py-3">Total (₹)</th>
-                      <th className="px-4 py-3 text-right">Verification</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-900/60 text-slate-300 font-mono">
-                    {userDeposits.map((d) => (
-                      <tr key={d.depositId} className="hover:bg-slate-900/20 transition-colors">
-                        <td className="px-4 py-3">
-                          <div className="font-bold text-slate-200">{d.utr}</div>
-                          <div className="text-[8px] text-slate-500 mt-0.5">{d.channel || 'Paytm QR'}</div>
-                        </td>
-                        <td className="px-4 py-3 font-bold text-emerald-400 font-mono text-sm">
-                          ₹{d.amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </td>
-                        <td className="px-4 py-3 text-right">{getStatusBadge(d.status, d.holdReason)}</td>
+          {(mode === 'all' || mode === 'deposit') && (
+            <div className="space-y-2.5">
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 block">Recharge Cash History</span>
+              {userDeposits.length === 0 ? (
+                <p className="text-xs text-slate-500 bg-slate-900/30 p-4 rounded-xl border border-slate-900 italic">No deposit records found in your journal.</p>
+              ) : (
+                <div className="overflow-x-auto border border-slate-900 rounded-xl bg-slate-950/40">
+                  <table className="min-w-full divide-y divide-slate-900 text-left text-xs">
+                    <thead className="bg-slate-900/60 text-[9px] text-slate-500 uppercase tracking-widest font-mono font-bold">
+                      <tr>
+                        <th className="px-4 py-3">Reference No</th>
+                        <th className="px-4 py-3">Total ({appConfig.currencySymbol})</th>
+                        <th className="px-4 py-3 text-right">Verification</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
+                    </thead>
+                    <tbody className="divide-y divide-slate-900/60 text-slate-300 font-mono">
+                      {userDeposits.map((d) => (
+                        <tr key={d.depositId} className="hover:bg-slate-900/20 transition-colors">
+                          <td className="px-4 py-3">
+                            <div className="font-bold text-slate-200">{d.utr}</div>
+                            <div className="text-[8px] text-slate-500 mt-0.5">{d.channel || 'Paytm QR'}</div>
+                          </td>
+                          <td className="px-4 py-3 font-bold text-emerald-400 font-mono text-sm">
+                            {appConfig.currencySymbol}{d.amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td className="px-4 py-3 text-right">{getStatusBadge(d.status, d.holdReason)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Cash Withdrawals History */}
-          <div className="space-y-2.5">
-            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 block">Payout Cash History</span>
-            {userWithdrawals.length === 0 ? (
-              <p className="text-xs text-slate-500 bg-slate-900/30 p-4 rounded-xl border border-slate-900 italic">No withdrawal payouts found in your journal.</p>
-            ) : (
-              <div className="overflow-x-auto border border-slate-900 rounded-xl bg-slate-950/40">
-                <table className="min-w-full divide-y divide-slate-900 text-left text-xs">
-                  <thead className="bg-slate-900/60 text-[9px] text-slate-500 uppercase tracking-widest font-mono font-bold">
-                    <tr>
-                      <th className="px-4 py-3">Details / Fields</th>
-                      <th className="px-4 py-3">Requested (₹)</th>
-                      <th className="px-4 py-3 text-right">Verification</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-900/60 text-slate-300 font-mono">
-                    {userWithdrawals.map((w) => (
-                      <tr key={w.withdrawalId} className="hover:bg-slate-900/20 transition-colors">
-                        <td className="px-4 py-3 text-[10px]">
-                          {w.fieldsData ? (
-                            <div className="space-y-0.5 text-slate-400">
-                              {Object.entries(w.fieldsData).map(([lbl, val]) => (
-                                <div key={lbl} className="truncate max-w-[130px]">
-                                  <span className="text-slate-600 font-bold uppercase text-[7px]">{lbl}:</span>{' '}
-                                  <span className="text-slate-300">{val}</span>
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <div className="text-slate-400">
-                              {w.upi ? `UPI: ${w.upi}` : `Bank: ...${w.accountNumber?.slice(-4)}`}
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 font-bold text-rose-400 text-sm font-mono">
-                          ₹{w.amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </td>
-                        <td className="px-4 py-3 text-right">{getStatusBadge(w.status, w.holdReason)}</td>
+          {(mode === 'all' || mode === 'withdrawal') && (
+            <div className="space-y-2.5">
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 block">Payout Cash History</span>
+              {userWithdrawals.length === 0 ? (
+                <p className="text-xs text-slate-500 bg-slate-900/30 p-4 rounded-xl border border-slate-900 italic">No withdrawal payouts found in your journal.</p>
+              ) : (
+                <div className="overflow-x-auto border border-slate-900 rounded-xl bg-slate-950/40">
+                  <table className="min-w-full divide-y divide-slate-900 text-left text-xs">
+                    <thead className="bg-slate-900/60 text-[9px] text-slate-500 uppercase tracking-widest font-mono font-bold">
+                      <tr>
+                        <th className="px-4 py-3">Details / Fields</th>
+                        <th className="px-4 py-3">Requested ({appConfig.currencySymbol})</th>
+                        <th className="px-4 py-3 text-right">Verification</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
+                    </thead>
+                    <tbody className="divide-y divide-slate-900/60 text-slate-300 font-mono">
+                      {userWithdrawals.map((w) => (
+                        <tr key={w.withdrawalId} className="hover:bg-slate-900/20 transition-colors">
+                          <td className="px-4 py-3 text-[10px]">
+                            {w.fieldsData ? (
+                              <div className="space-y-0.5 text-slate-400">
+                                {Object.entries(w.fieldsData).map(([lbl, val]) => (
+                                  <div key={lbl} className="truncate max-w-[130px]">
+                                    <span className="text-slate-600 font-bold uppercase text-[7px]">{lbl}:</span>{' '}
+                                    <span className="text-slate-300">{val}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="text-slate-400">
+                                {w.upi ? `UPI: ${w.upi}` : `Bank: ...${w.accountNumber?.slice(-4)}`}
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 font-bold text-rose-400 text-sm font-mono">
+                            {appConfig.currencySymbol}{w.amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td className="px-4 py-3 text-right">{getStatusBadge(w.status, w.holdReason)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
 
         </div>
       )}
