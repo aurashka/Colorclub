@@ -63,13 +63,7 @@ export default function ProfileSection({
             </div>
           </div>
 
-          <button 
-            onClick={() => onOpenSheet('addbank')}
-            className="px-3 py-1 bg-[#8C5D19] border border-[#FFE194]/30 text-white font-extrabold text-[9px] uppercase tracking-wider rounded-xl hover:bg-[#6D4812] transition-colors cursor-pointer flex items-center space-x-1"
-          >
-            <Landmark className="h-2.5 w-2.5" />
-            <span>Bank Details</span>
-          </button>
+          {/* Bank details button removed per request */}
         </div>
 
         {/* 3 Columns Ledger Row */}

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { UserProfile, DepositRequest, WithdrawalRequest, BidRecord, RoomType, GamePeriod, DepositChannel, DepositChannelField, WithdrawalField, AppConfig } from '../types';
 import { COLOR_MAP } from '../utils/gameUtils';
-import { ShieldAlert, Users, Check, X, DollarSign, Search, Settings, Radio, Plus, Percent, Calendar, Trash2, Clock, Landmark, Layers, Send, QrCode, CreditCard, Sparkles, Mail, MessageSquare, Ban, Edit, Ticket, UserCheck, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ShieldAlert, Users, Check, X, DollarSign, Search, Settings, Radio, Plus, Percent, Calendar, Trash2, Clock, Landmark, Layers, Send, QrCode, CreditCard, Sparkles, Mail, MessageSquare, Ban, Edit, Ticket, UserCheck, AlertTriangle, ChevronLeft, ChevronRight, LayoutDashboard, TrendingUp, Activity, CheckCircle2 } from 'lucide-react';
 import { ref, set, update, push, onValue, get, remove } from 'firebase/database';
 import { db } from '../firebase';
 
@@ -67,10 +67,18 @@ export default function AdminPanel({
   onUpdateAppConfig,
 }: AdminPanelProps) {
   // Navigation
-  const [adminTab, setAdminTab] = useState<'transactions' | 'users' | 'manipulate' | 'payments' | 'appConfig' | 'coupons' | 'supportChat'>('transactions');
+  const [adminTab, setAdminTab] = useState<'dashboard' | 'transactions' | 'users' | 'manipulate' | 'payments' | 'appConfig' | 'coupons' | 'supportChat'>('dashboard');
   
   // Search State
   const [userSearch, setUserSearch] = useState('');
+
+  // Lazy loading state for user database list
+  const [userListLimit, setUserListLimit] = useState(10);
+
+  // Reset limit when search pattern changes
+  React.useEffect(() => {
+    setUserListLimit(10);
+  }, [userSearch]);
   
   // Balance Adjuster State
   const [editingUserKey, setEditingUserKey] = useState<string | null>(null);
@@ -90,19 +98,19 @@ export default function AdminPanel({
   const [customReason, setCustomReason] = useState('');
 
   // App Configuration Form States
-  const [cfgAppName, setCfgAppName] = useState(appConfig.appName || '');
-  const [cfgCurrencySymbol, setCfgCurrencySymbol] = useState(appConfig.currencySymbol || '₹');
-  const [cfgCurrencyName, setCfgCurrencyName] = useState(appConfig.currencyName || 'INR');
+  const [cfgAppName, setCfgAppName] = useState(String(appConfig.appName || ''));
+  const [cfgCurrencySymbol, setCfgCurrencySymbol] = useState(String(appConfig.currencySymbol || '₹'));
+  const [cfgCurrencyName, setCfgCurrencyName] = useState(String(appConfig.currencyName || 'INR'));
   const [cfgMinDep, setCfgMinDep] = useState((appConfig.minDeposit || 100).toString());
   const [cfgMaxDep, setCfgMaxDep] = useState((appConfig.maxDeposit || 100000).toString());
   const [cfgMinWith, setCfgMinWith] = useState((appConfig.minWithdrawal || 110).toString());
   const [cfgMaxWith, setCfgMaxWith] = useState((appConfig.maxWithdrawal || 100000).toString());
-  const [cfgTg, setCfgTg] = useState(appConfig.telegramSupport || '');
-  const [cfgWa, setCfgWa] = useState(appConfig.whatsappSupport || '');
+  const [cfgTg, setCfgTg] = useState(String(appConfig.telegramSupport || ''));
+  const [cfgWa, setCfgWa] = useState(String(appConfig.whatsappSupport || ''));
   const [cfgInterestRate, setCfgInterestRate] = useState((appConfig.interestRate !== undefined ? appConfig.interestRate : 0.03).toString());
-  const [cfgSupportEmail, setCfgSupportEmail] = useState(appConfig.supportEmail || 'support@lottery7.vip');
-  const [cfgSupportChatLink, setCfgSupportChatLink] = useState(appConfig.supportChatLink || '');
-  const [cfgReferralDomain, setCfgReferralDomain] = useState(appConfig.referralDomain || '');
+  const [cfgSupportEmail, setCfgSupportEmail] = useState(String(appConfig.supportEmail || 'support@lottery7.vip'));
+  const [cfgSupportChatLink, setCfgSupportChatLink] = useState(String(appConfig.supportChatLink || ''));
+  const [cfgReferralDomain, setCfgReferralDomain] = useState(String(appConfig.referralDomain || ''));
   const [interestLoading, setInterestLoading] = useState(false);
   const [cfgLoading, setCfgLoading] = useState(false);
   const [cfgSuccess, setCfgSuccess] = useState('');
@@ -170,19 +178,19 @@ export default function AdminPanel({
 
   // Sync state if prop changes
   React.useEffect(() => {
-    setCfgAppName(appConfig.appName || '');
-    setCfgCurrencySymbol(appConfig.currencySymbol || '₹');
-    setCfgCurrencyName(appConfig.currencyName || 'INR');
+    setCfgAppName(String(appConfig.appName || ''));
+    setCfgCurrencySymbol(String(appConfig.currencySymbol || '₹'));
+    setCfgCurrencyName(String(appConfig.currencyName || 'INR'));
     setCfgMinDep((appConfig.minDeposit || 100).toString());
     setCfgMaxDep((appConfig.maxDeposit || 100000).toString());
     setCfgMinWith((appConfig.minWithdrawal || 110).toString());
     setCfgMaxWith((appConfig.maxWithdrawal || 100000).toString());
-    setCfgTg(appConfig.telegramSupport || '');
-    setCfgWa(appConfig.whatsappSupport || '');
+    setCfgTg(String(appConfig.telegramSupport || ''));
+    setCfgWa(String(appConfig.whatsappSupport || ''));
     setCfgInterestRate((appConfig.interestRate !== undefined ? appConfig.interestRate : 0.03).toString());
-    setCfgSupportEmail(appConfig.supportEmail || 'support@lottery7.vip');
-    setCfgSupportChatLink(appConfig.supportChatLink || '');
-    setCfgReferralDomain(appConfig.referralDomain || '');
+    setCfgSupportEmail(String(appConfig.supportEmail || 'support@lottery7.vip'));
+    setCfgSupportChatLink(String(appConfig.supportChatLink || ''));
+    setCfgReferralDomain(String(appConfig.referralDomain || ''));
   }, [appConfig]);
 
   const handleAppConfigSubmit = async (e: React.FormEvent) => {
@@ -193,19 +201,19 @@ export default function AdminPanel({
 
     try {
       await onUpdateAppConfig({
-        appName: (cfgAppName || '').trim(),
+        appName: String(cfgAppName || '').trim(),
         minDeposit: Number(cfgMinDep),
         maxDeposit: Number(cfgMaxDep),
         minWithdrawal: Number(cfgMinWith),
         maxWithdrawal: Number(cfgMaxWith),
-        telegramSupport: (cfgTg || '').trim(),
-        whatsappSupport: (cfgWa || '').trim(),
-        currencySymbol: (cfgCurrencySymbol || '').trim(),
-        currencyName: (cfgCurrencyName || '').trim(),
+        telegramSupport: String(cfgTg || '').trim(),
+        whatsappSupport: String(cfgWa || '').trim(),
+        currencySymbol: String(cfgCurrencySymbol || '').trim(),
+        currencyName: String(cfgCurrencyName || '').trim(),
         interestRate: Number(cfgInterestRate),
-        supportEmail: (cfgSupportEmail || '').trim(),
-        supportChatLink: (cfgSupportChatLink || '').trim(),
-        referralDomain: (cfgReferralDomain || '').trim()
+        supportEmail: String(cfgSupportEmail || '').trim(),
+        supportChatLink: String(cfgSupportChatLink || '').trim(),
+        referralDomain: String(cfgReferralDomain || '').trim()
       });
       setCfgSuccess('Global App Configuration and Currency settings updated successfully!');
     } catch (err: any) {
@@ -588,126 +596,8 @@ export default function AdminPanel({
   };
 
   return (
-    <div className="bg-[#1E293B] border border-slate-700/50 rounded-2xl p-6 shadow-xl font-sans space-y-8 text-slate-200">
-      {/* Admin Title Bar */}
-      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center border-b border-slate-800 pb-5 gap-4">
-        <div>
-          <h3 className="text-lg font-bold text-white tracking-wide uppercase flex items-center space-x-2">
-            <ShieldAlert className="h-5 w-5 text-purple-400 animate-pulse" />
-            <span>Administrator Control Console</span>
-          </h3>
-          <p className="text-xs text-slate-400 mt-0.5">Control live transactions, adjust credit ledgers, and manage game prediction states.</p>
-        </div>
-
-        {/* Admin Navigation */}
-        <div className="flex p-1 bg-slate-900/60 rounded-xl border border-slate-800/80 w-full xl:w-auto overflow-x-auto">
-          <button
-            onClick={() => setAdminTab('transactions')}
-            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer min-w-max border ${
-              adminTab === 'transactions'
-                ? 'bg-[#1E293B] text-purple-400 border-purple-500/20 shadow-md'
-                : 'text-slate-400 border-transparent hover:text-slate-200 hover:bg-slate-800/50'
-            }`}
-          >
-            Deposits & Withdrawals ({pendingDeposits.length + pendingWithdrawals.length})
-          </button>
-          <button
-            onClick={() => setAdminTab('users')}
-            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer min-w-max border ${
-              adminTab === 'users'
-                ? 'bg-[#1E293B] text-purple-400 border-purple-500/20 shadow-md'
-                : 'text-slate-400 border-transparent hover:text-slate-200 hover:bg-slate-800/50'
-            }`}
-          >
-            User Database ({users.length})
-          </button>
-          <button
-            onClick={() => setAdminTab('manipulate')}
-            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer min-w-max border ${
-              adminTab === 'manipulate'
-                ? 'bg-[#1E293B] text-purple-400 border-purple-500/20 shadow-md'
-                : 'text-slate-400 border-transparent hover:text-slate-200 hover:bg-slate-800/50'
-            }`}
-          >
-            Outcome Overrides & Schedule
-          </button>
-          <button
-            onClick={() => setAdminTab('payments')}
-            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer min-w-max border ${
-              adminTab === 'payments'
-                ? 'bg-[#1E293B] text-purple-400 border-purple-500/20 shadow-md'
-                : 'text-slate-400 border-transparent hover:text-slate-200 hover:bg-slate-800/50'
-            }`}
-          >
-            Payment Gateways & Forms
-          </button>
-          <button
-            onClick={() => setAdminTab('coupons')}
-            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer min-w-max border ${
-              adminTab === 'coupons'
-                ? 'bg-[#1E293B] text-purple-400 border-purple-500/20 shadow-md'
-                : 'text-slate-400 border-transparent hover:text-slate-200 hover:bg-slate-800/50'
-            }`}
-          >
-            Gift Coupons ({coupons.length})
-          </button>
-          <button
-            onClick={() => setAdminTab('supportChat')}
-            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer min-w-max border relative ${
-              adminTab === 'supportChat'
-                ? 'bg-[#1E293B] text-purple-400 border-purple-500/20 shadow-md'
-                : 'text-slate-400 border-transparent hover:text-slate-200 hover:bg-slate-800/50'
-            }`}
-          >
-            <span>Live Help Support</span>
-            {unreadChatCount > 0 && (
-              <span className="ml-1.5 px-1.5 py-0.5 bg-red-500 text-white font-black rounded-full text-[8px] animate-bounce inline-block">
-                {unreadChatCount}
-              </span>
-            )}
-          </button>
-          <button
-            onClick={() => setAdminTab('appConfig')}
-            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer min-w-max border ${
-              adminTab === 'appConfig'
-                ? 'bg-[#1E293B] text-[#d4af37] border-[#d4af37]/20 shadow-md'
-                : 'text-slate-400 border-transparent hover:text-slate-200 hover:bg-slate-800/50'
-            }`}
-          >
-            App Configuration
-          </button>
-        </div>
-      </div>
-
-      {/* Metrics Bar */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-        <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4 flex items-center space-x-3.5">
-          <DollarSign className="h-8 w-8 text-purple-400 bg-purple-500/10 p-1.5 rounded-lg shrink-0" />
-          <div>
-            <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">Approved Deposits</span>
-            <span className="text-xl font-black font-mono text-white block mt-0.5">{appConfig.currencySymbol}{totalDeposited.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-          </div>
-        </div>
-
-        <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4 flex items-center space-x-3.5">
-          <DollarSign className="h-8 w-8 text-rose-400 bg-rose-500/10 p-1.5 rounded-lg shrink-0" />
-          <div>
-            <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">Paid Withdrawals</span>
-            <span className="text-xl font-black font-mono text-white block mt-0.5">{appConfig.currencySymbol}{totalWithdrawn.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-          </div>
-        </div>
-
-        <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4 flex items-center space-x-3.5">
-          <DollarSign className="h-8 w-8 text-emerald-400 bg-emerald-500/10 p-1.5 rounded-lg shrink-0" />
-          <div>
-            <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">Net System Margin</span>
-            <span className={`text-xl font-black font-mono block mt-0.5 ${netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-              {appConfig.currencySymbol}{netProfit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-            </span>
-          </div>
-        </div>
-      </div>
-
+    <div className="bg-[#0B0F19] border border-slate-800 rounded-2xl p-2 sm:p-3 lg:p-4 shadow-2xl font-sans text-slate-200 min-h-[780px] flex flex-col xl:flex-row gap-5">
+      
       {/* REASON MODAL POPUP */}
       {reasonModal && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
@@ -745,6 +635,461 @@ export default function AdminPanel({
           </div>
         </div>
       )}
+
+      {/* 1. SIDEBAR NAVIGATION RAIL */}
+      <div className="xl:w-[260px] shrink-0 bg-[#0F1322] border border-slate-850 rounded-2xl p-4 flex flex-col justify-between space-y-6">
+        <div className="space-y-5">
+          {/* Console Logo and Title */}
+          <div className="border-b border-slate-850 pb-4">
+            <h3 className="text-sm font-black text-white tracking-widest uppercase flex items-center space-x-2">
+              <ShieldAlert className="h-5 w-5 text-purple-500 animate-pulse" />
+              <span>Admin Console</span>
+            </h3>
+            <p className="text-[9px] text-slate-500 font-bold uppercase tracking-wider mt-1">Management Suite v1.2</p>
+          </div>
+
+          {/* Tab buttons */}
+          <div className="flex xl:flex-col gap-1 overflow-x-auto xl:overflow-x-visible pb-2 xl:pb-0 scrollbar-none">
+            {/* Dashboard Overview */}
+            <button
+              onClick={() => setAdminTab('dashboard')}
+              className={`px-3 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center space-x-2.5 w-full shrink-0 border ${
+                adminTab === 'dashboard'
+                  ? 'bg-purple-550/10 text-purple-400 border-purple-500/25 font-extrabold shadow-md shadow-purple-950/20 bg-slate-900/40'
+                  : 'text-slate-400 border-transparent hover:text-slate-200 hover:bg-slate-850/40'
+              }`}
+            >
+              <LayoutDashboard className="h-4 w-4 shrink-0" />
+              <span>Dashboard Overview</span>
+            </button>
+
+            {/* Transactions Section */}
+            <button
+              onClick={() => setAdminTab('transactions')}
+              className={`px-3 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-between w-full shrink-0 border ${
+                adminTab === 'transactions'
+                  ? 'bg-purple-550/10 text-purple-400 border-purple-500/25 font-extrabold shadow-md shadow-purple-950/20 bg-slate-900/40'
+                  : 'text-slate-400 border-transparent hover:text-slate-200 hover:bg-slate-850/40'
+              }`}
+            >
+              <div className="flex items-center space-x-2.5">
+                <DollarSign className="h-4 w-4 shrink-0" />
+                <span>Transactions</span>
+              </div>
+              {(pendingDeposits.length + pendingWithdrawals.length) > 0 && (
+                <span className="bg-red-500 text-white font-black px-1.5 py-0.5 rounded-md text-[8px] animate-pulse leading-none">
+                  {pendingDeposits.length + pendingWithdrawals.length}
+                </span>
+              )}
+            </button>
+
+            {/* User Database */}
+            <button
+              onClick={() => setAdminTab('users')}
+              className={`px-3 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-between w-full shrink-0 border ${
+                adminTab === 'users'
+                  ? 'bg-purple-550/10 text-purple-400 border-purple-500/25 font-extrabold shadow-md shadow-purple-950/20 bg-slate-900/40'
+                  : 'text-slate-400 border-transparent hover:text-slate-200 hover:bg-slate-850/40'
+              }`}
+            >
+              <div className="flex items-center space-x-2.5">
+                <Users className="h-4 w-4 shrink-0" />
+                <span>Player Database</span>
+              </div>
+              <span className="bg-slate-850 text-slate-400 font-bold px-1.5 py-0.5 rounded-md text-[8px] font-mono leading-none">
+                {users.length}
+              </span>
+            </button>
+
+            {/* Outcome Manipulation */}
+            <button
+              onClick={() => setAdminTab('manipulate')}
+              className={`px-3 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center space-x-2.5 w-full shrink-0 border ${
+                adminTab === 'manipulate'
+                  ? 'bg-purple-550/10 text-purple-400 border-purple-500/25 font-extrabold shadow-md shadow-purple-950/20 bg-slate-900/40'
+                  : 'text-slate-400 border-transparent hover:text-slate-200 hover:bg-slate-850/40'
+              }`}
+            >
+              <Layers className="h-4 w-4 shrink-0" />
+              <span>Outcome Overrides</span>
+            </button>
+
+            {/* Payment Gateways */}
+            <button
+              onClick={() => setAdminTab('payments')}
+              className={`px-3 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center space-x-2.5 w-full shrink-0 border ${
+                adminTab === 'payments'
+                  ? 'bg-purple-550/10 text-purple-400 border-purple-500/25 font-extrabold shadow-md shadow-purple-950/20 bg-slate-900/40'
+                  : 'text-slate-400 border-transparent hover:text-slate-200 hover:bg-slate-850/40'
+              }`}
+            >
+              <Landmark className="h-4 w-4 shrink-0" />
+              <span>Payment Setup</span>
+            </button>
+
+            {/* Coupons */}
+            <button
+              onClick={() => setAdminTab('coupons')}
+              className={`px-3 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-between w-full shrink-0 border ${
+                adminTab === 'coupons'
+                  ? 'bg-purple-550/10 text-purple-400 border-purple-500/25 font-extrabold shadow-md shadow-purple-950/20 bg-slate-900/40'
+                  : 'text-slate-400 border-transparent hover:text-slate-200 hover:bg-slate-850/40'
+              }`}
+            >
+              <div className="flex items-center space-x-2.5">
+                <Ticket className="h-4 w-4 shrink-0" />
+                <span>Gift Coupons</span>
+              </div>
+              <span className="bg-slate-850 text-slate-400 font-bold px-1.5 py-0.5 rounded-md text-[8px] font-mono leading-none">
+                {coupons.length}
+              </span>
+            </button>
+
+            {/* Live Chat Support */}
+            <button
+              onClick={() => setAdminTab('supportChat')}
+              className={`px-3 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-between w-full shrink-0 border ${
+                adminTab === 'supportChat'
+                  ? 'bg-purple-550/10 text-purple-400 border-purple-500/25 font-extrabold shadow-md shadow-purple-950/20 bg-slate-900/40'
+                  : 'text-slate-400 border-transparent hover:text-slate-200 hover:bg-slate-850/40'
+              }`}
+            >
+              <div className="flex items-center space-x-2.5">
+                <MessageSquare className="h-4 w-4 shrink-0" />
+                <span>Help Support</span>
+              </div>
+              {unreadChatCount > 0 && (
+                <span className="bg-red-500 text-white font-black px-1.5 py-0.5 rounded-md text-[8px] animate-bounce leading-none">
+                  {unreadChatCount}
+                </span>
+              )}
+            </button>
+
+            {/* App Settings */}
+            <button
+              onClick={() => setAdminTab('appConfig')}
+              className={`px-3 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center space-x-2.5 w-full shrink-0 border ${
+                adminTab === 'appConfig'
+                  ? 'bg-purple-550/10 text-[#d4af37] border-amber-500/25 font-extrabold shadow-md shadow-amber-950/20 bg-slate-900/40'
+                  : 'text-slate-400 border-transparent hover:text-slate-200 hover:bg-slate-850/40'
+              }`}
+            >
+              <Settings className="h-4 w-4 shrink-0" />
+              <span>Global Config</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Server status indicator */}
+        <div className="hidden xl:block pt-4 border-t border-slate-850">
+          <div className="flex items-center space-x-2 bg-slate-950 p-2.5 rounded-xl border border-slate-850">
+            <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse" />
+            <div className="text-[9px] font-bold text-slate-400 font-mono">
+              REALTIME CONSOLE ACTIVE
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 2. MAIN VIEW WINDOW */}
+      <div className="flex-1 bg-[#0F1322] border border-slate-850 rounded-2xl p-4 lg:p-6 min-h-0 overflow-y-auto space-y-6">
+
+        {/* Tab Contents: dashboard */}
+        {adminTab === 'dashboard' && (
+          <div className="space-y-6">
+            {/* System Overview Hero Banner */}
+            <div className="bg-gradient-to-br from-purple-950/20 via-slate-950/30 to-slate-950/75 p-5 sm:p-6 rounded-2xl border border-purple-900/15 shadow-lg relative overflow-hidden">
+              <div className="absolute top-0 right-0 p-6 opacity-5 hidden md:block">
+                <ShieldAlert className="h-40 w-40 text-purple-400" />
+              </div>
+              <div className="relative z-10 space-y-2">
+                <div className="inline-flex items-center space-x-1.5 px-2.5 py-1 bg-purple-550/10 border border-purple-500/20 rounded-full text-[9px] font-black uppercase tracking-widest text-purple-400">
+                  <Activity className="h-3 w-3 animate-pulse" />
+                  <span>Real-time System Status</span>
+                </div>
+                <h3 className="text-xl sm:text-2xl font-black text-white tracking-wide uppercase">System Performance Dashboard</h3>
+                <p className="text-xs text-slate-400 max-w-xl leading-relaxed">
+                  Welcome back to the system administrator cockpit. Below is a live summary of platform financial metrics, pending requests, and gamer registration statistics. Use the tabs in the sidebar navigation pane to inspect individual database models.
+                </p>
+              </div>
+            </div>
+
+            {/* Metrics Bar */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+              <div className="bg-slate-950/40 border border-slate-850 rounded-2xl p-5 hover:border-purple-500/20 transition-all shadow-md group">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Approved Deposits</span>
+                  <DollarSign className="h-7 w-7 text-emerald-400 bg-emerald-500/10 p-1.5 rounded-xl group-hover:scale-110 transition-transform" />
+                </div>
+                <span className="text-2xl font-black font-mono text-white block">
+                  {appConfig.currencySymbol}{totalDeposited.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </span>
+                <span className="text-[9px] text-slate-500 font-bold uppercase block mt-1">Verified Inbound Funds</span>
+              </div>
+
+              <div className="bg-slate-950/40 border border-slate-850 rounded-2xl p-5 hover:border-purple-500/20 transition-all shadow-md group">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Paid Withdrawals</span>
+                  <DollarSign className="h-7 w-7 text-rose-400 bg-rose-500/10 p-1.5 rounded-xl group-hover:scale-110 transition-transform" />
+                </div>
+                <span className="text-2xl font-black font-mono text-white block">
+                  {appConfig.currencySymbol}{totalWithdrawn.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </span>
+                <span className="text-[9px] text-slate-500 font-bold uppercase block mt-1">Verified Outbound Cashouts</span>
+              </div>
+
+              <div className="bg-slate-950/40 border border-slate-850 rounded-2xl p-5 hover:border-purple-500/20 transition-all shadow-md group">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Net System Margin</span>
+                  <TrendingUp className="h-7 w-7 text-purple-400 bg-purple-500/10 p-1.5 rounded-xl group-hover:scale-110 transition-transform" />
+                </div>
+                <span className={`text-2xl font-black font-mono block ${netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {appConfig.currencySymbol}{netProfit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </span>
+                <span className="text-[9px] text-slate-500 font-bold uppercase block mt-1">Net Platform Earnings</span>
+              </div>
+            </div>
+
+            {/* Quick Status Stats Grid */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div 
+                onClick={() => setAdminTab('users')}
+                className="bg-slate-950/20 border border-slate-850 rounded-xl p-4 text-left cursor-pointer hover:bg-slate-950/40 hover:border-purple-500/10 transition-all"
+              >
+                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">Total Gamers</span>
+                <div className="flex items-baseline space-x-1.5 mt-1">
+                  <span className="text-xl font-black font-mono text-white">{users.length}</span>
+                  <span className="text-[10px] text-slate-500 font-bold">Registered</span>
+                </div>
+              </div>
+
+              <div 
+                onClick={() => setAdminTab('transactions')}
+                className="bg-slate-950/20 border border-slate-850 rounded-xl p-4 text-left cursor-pointer hover:bg-slate-950/40 hover:border-purple-500/10 transition-all"
+              >
+                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">Pending Deposits</span>
+                <div className="flex items-baseline space-x-1.5 mt-1">
+                  <span className={`text-xl font-black font-mono ${pendingDeposits.length > 0 ? 'text-amber-400 animate-pulse' : 'text-slate-400'}`}>
+                    {pendingDeposits.length}
+                  </span>
+                  <span className="text-[10px] text-slate-500 font-bold">Awaiting Action</span>
+                </div>
+              </div>
+
+              <div 
+                onClick={() => setAdminTab('transactions')}
+                className="bg-slate-950/20 border border-slate-850 rounded-xl p-4 text-left cursor-pointer hover:bg-slate-950/40 hover:border-purple-500/10 transition-all"
+              >
+                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">Pending Withdrawals</span>
+                <div className="flex items-baseline space-x-1.5 mt-1">
+                  <span className={`text-xl font-black font-mono ${pendingWithdrawals.length > 0 ? 'text-rose-400 animate-pulse' : 'text-slate-400'}`}>
+                    {pendingWithdrawals.length}
+                  </span>
+                  <span className="text-[10px] text-slate-500 font-bold">Awaiting Action</span>
+                </div>
+              </div>
+
+              <div 
+                onClick={() => setAdminTab('supportChat')}
+                className="bg-slate-950/20 border border-slate-850 rounded-xl p-4 text-left cursor-pointer hover:bg-slate-950/40 hover:border-purple-500/10 transition-all"
+              >
+                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">Support Inbox</span>
+                <div className="flex items-baseline space-x-1.5 mt-1">
+                  <span className={`text-xl font-black font-mono ${unreadChatCount > 0 ? 'text-red-500 animate-bounce' : 'text-slate-400'}`}>
+                    {unreadChatCount}
+                  </span>
+                  <span className="text-[10px] text-slate-500 font-bold">Unread Chats</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Actions Shortcuts */}
+            <div className="bg-slate-950/20 border border-slate-850 rounded-2xl p-5 space-y-4">
+              <span className="text-[10px] font-black text-purple-400 uppercase tracking-widest block">System Quick Controls</span>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <button
+                  onClick={() => setAdminTab('manipulate')}
+                  className="p-3 bg-slate-950 border border-slate-850 rounded-xl text-left hover:border-purple-500/20 hover:bg-slate-900/40 transition-all group cursor-pointer"
+                >
+                  <span className="text-xs font-bold text-white block group-hover:text-purple-400 transition-colors">Outcome Manipulation</span>
+                  <span className="text-[9px] text-slate-500 block mt-0.5">Preset numbers or adjust colors of active game periods</span>
+                </button>
+
+                <button
+                  onClick={() => setAdminTab('appConfig')}
+                  className="p-3 bg-slate-950 border border-slate-850 rounded-xl text-left hover:border-purple-500/20 hover:bg-slate-900/40 transition-all group cursor-pointer"
+                >
+                  <span className="text-xs font-bold text-white block group-hover:text-purple-400 transition-colors">Global Rules & Configuration</span>
+                  <span className="text-[9px] text-slate-500 block mt-0.5">Edit minimum deposit, withdrawal, interest rate & support details</span>
+                </button>
+
+                <button
+                  onClick={() => setAdminTab('payments')}
+                  className="p-3 bg-slate-950 border border-slate-850 rounded-xl text-left hover:border-purple-500/20 hover:bg-slate-900/40 transition-all group cursor-pointer"
+                >
+                  <span className="text-xs font-bold text-white block group-hover:text-purple-400 transition-colors">Deposit Gateways Setup</span>
+                  <span className="text-[9px] text-slate-500 block mt-0.5">Customize active UPI details, bank transfers & payment QR Codes</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Direct App Configuration Form at bottom of Dashboard */}
+            <div className="bg-slate-950/40 border border-slate-850 rounded-2xl p-5 space-y-5 animate-in fade-in duration-300">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-900 pb-3">
+                <div className="flex items-center space-x-2">
+                  <Settings className="h-4.5 w-4.5 text-[#d4af37] animate-pulse" />
+                  <div>
+                    <h4 className="text-xs font-black text-white uppercase tracking-wider">Dashboard App Configuration (Firebase Console)</h4>
+                    <span className="text-[9px] text-slate-500 font-bold uppercase block mt-0.5">Edit and save live details instantly</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAdminTab('appConfig')}
+                  className="px-3 py-1 bg-purple-550/10 hover:bg-purple-550/25 border border-purple-500/20 text-purple-400 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all shrink-0 text-center"
+                >
+                  Manage All Details
+                </button>
+              </div>
+
+              {cfgSuccess && (
+                <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 p-3 rounded-xl text-xs flex items-center space-x-2">
+                  <Check className="h-3.5 w-3.5 text-emerald-400" />
+                  <span>{cfgSuccess}</span>
+                </div>
+              )}
+              {cfgError && (
+                <div className="bg-rose-500/10 border border-rose-500/30 text-rose-300 p-3 rounded-xl text-xs flex items-center space-x-2">
+                  <X className="h-3.5 w-3.5 text-rose-400" />
+                  <span>{cfgError}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleAppConfigSubmit} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Application Name</label>
+                    <input
+                      type="text"
+                      required
+                      value={cfgAppName}
+                      onChange={(e) => setCfgAppName(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-850 rounded-xl text-xs text-white focus:outline-none focus:border-purple-500/30 font-bold"
+                      placeholder="e.g. My VIP Game"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Currency Symbol</label>
+                    <input
+                      type="text"
+                      required
+                      value={cfgCurrencySymbol}
+                      onChange={(e) => setCfgCurrencySymbol(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-850 rounded-xl text-xs text-white focus:outline-none focus:border-purple-500/30 font-mono"
+                      placeholder="e.g. ₹ or $"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Currency Name (Code)</label>
+                    <input
+                      type="text"
+                      required
+                      value={cfgCurrencyName}
+                      onChange={(e) => setCfgCurrencyName(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-850 rounded-xl text-xs text-white focus:outline-none focus:border-purple-500/30 font-mono"
+                      placeholder="e.g. INR or USD"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-slate-950/20 p-3.5 border border-slate-900 rounded-xl">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Min Deposit</label>
+                    <input
+                      type="number"
+                      required
+                      min="1"
+                      value={cfgMinDep}
+                      onChange={(e) => setCfgMinDep(e.target.value)}
+                      className="w-full px-3 py-1.5 bg-slate-950 border border-slate-850 rounded-xl text-xs text-white focus:outline-none font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Max Deposit</label>
+                    <input
+                      type="number"
+                      required
+                      min="1"
+                      value={cfgMaxDep}
+                      onChange={(e) => setCfgMaxDep(e.target.value)}
+                      className="w-full px-3 py-1.5 bg-slate-950 border border-slate-850 rounded-xl text-xs text-white focus:outline-none font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Min Withdrawal</label>
+                    <input
+                      type="number"
+                      required
+                      min="1"
+                      value={cfgMinWith}
+                      onChange={(e) => setCfgMinWith(e.target.value)}
+                      className="w-full px-3 py-1.5 bg-slate-950 border border-slate-850 rounded-xl text-xs text-white focus:outline-none font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Interest Rate (Daily)</label>
+                    <input
+                      type="number"
+                      step="0.0001"
+                      required
+                      value={cfgInterestRate}
+                      onChange={(e) => setCfgInterestRate(e.target.value)}
+                      className="w-full px-3 py-1.5 bg-slate-950 border border-slate-850 rounded-xl text-xs text-white focus:outline-none font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Telegram Support Link</label>
+                    <input
+                      type="text"
+                      value={cfgTg}
+                      onChange={(e) => setCfgTg(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-850 rounded-xl text-xs text-white focus:outline-none"
+                      placeholder="e.g. https://t.me/customer_service"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">WhatsApp Support Link</label>
+                    <input
+                      type="text"
+                      value={cfgWa}
+                      onChange={(e) => setCfgWa(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-850 rounded-xl text-xs text-white focus:outline-none"
+                      placeholder="e.g. WhatsApp support link/number"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={cfgLoading}
+                  className="w-full bg-[#d4af37] text-slate-950 hover:bg-[#ebd06a] font-black py-2.5 rounded-xl text-xs uppercase tracking-wider cursor-pointer flex items-center justify-center space-x-1.5 transition-colors disabled:opacity-50"
+                >
+                  <Check className="h-4 w-4" />
+                  <span>{cfgLoading ? 'Saving Config...' : 'Update App Config on Firebase'}</span>
+                </button>
+              </form>
+            </div>
+          </div>
+        )}
 
       {/* Tab Contents: transactions */}
       {adminTab === 'transactions' && (
@@ -938,7 +1283,7 @@ export default function AdminPanel({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 text-slate-300">
-                {filteredUsers.map((u) => {
+                {filteredUsers.slice(0, userListLimit).map((u) => {
                   const uKey = u.email ? getEmailKey(u.email) : (u.phone || u.uid);
                   return (
                     <tr key={u.uid} className="hover:bg-slate-800/30 transition-colors">
@@ -1001,6 +1346,29 @@ export default function AdminPanel({
               </tbody>
             </table>
           </div>
+
+          {/* Lazy Loading / Pagination control block */}
+          {filteredUsers.length > userListLimit && (
+            <div className="flex flex-col sm:flex-row items-center justify-between p-4 bg-[#0F1322] border border-slate-850 rounded-xl gap-4">
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                Showing {Math.min(userListLimit, filteredUsers.length)} of {filteredUsers.length} Players Registered
+              </span>
+              <div className="flex items-center space-x-3 w-full sm:w-auto">
+                <button
+                  onClick={() => setUserListLimit((prev) => prev + 10)}
+                  className="flex-1 sm:flex-none px-4 py-2 bg-purple-550/15 hover:bg-purple-550/25 border border-purple-500/20 text-purple-400 text-xs font-extrabold uppercase tracking-wider rounded-xl transition-all cursor-pointer shadow-lg active:scale-95"
+                >
+                  Load 10 More Players (+10)
+                </button>
+                <button
+                  onClick={() => setUserListLimit(filteredUsers.length)}
+                  className="flex-1 sm:flex-none px-4 py-2 bg-slate-800 hover:bg-slate-750 text-slate-300 text-xs font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer"
+                >
+                  Load All
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -2667,6 +3035,7 @@ export default function AdminPanel({
           )}
         </div>
       )}
+      </div>
     </div>
   );
 }
