@@ -194,6 +194,23 @@ export default function App() {
     return () => unsubscribe();
   }, [user?.email, user?.phone]);
 
+  // Update lastActive timestamp for the active user session
+  useEffect(() => {
+    if (!user) return;
+    const userKey = getUserKey(user);
+    const userRef = ref(db, `users/${userKey}`);
+    
+    // Update immediately on mount / change
+    update(userRef, { lastActive: Date.now() });
+
+    // Set up an interval to update every 45 seconds
+    const interval = setInterval(() => {
+      update(userRef, { lastActive: Date.now() });
+    }, 45000);
+
+    return () => clearInterval(interval);
+  }, [user?.email, user?.phone]);
+
   // Real-time support chat unread count subscriber
   useEffect(() => {
     if (!user) {
@@ -365,8 +382,8 @@ export default function App() {
           maxDeposit: val.maxDeposit !== undefined ? Number(val.maxDeposit) : 500000,
           minWithdrawal: val.minWithdrawal !== undefined ? Number(val.minWithdrawal) : 200,
           maxWithdrawal: val.maxWithdrawal !== undefined ? Number(val.maxWithdrawal) : 100000,
-          telegramSupport: val.telegramSupport || '@customer_service',
-          whatsappSupport: val.whatsappSupport || '+919876543210',
+          telegramSupport: val.telegramSupport !== undefined ? String(val.telegramSupport) : '@customer_service',
+          whatsappSupport: val.whatsappSupport !== undefined ? String(val.whatsappSupport) : '+919876543210',
           currencySymbol: val.currencySymbol || '₹',
           currencyName: val.currencyName || 'INR',
           interestRate: val.interestRate !== undefined ? Number(val.interestRate) : 0.03,

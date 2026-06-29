@@ -15,6 +15,7 @@ export interface UserProfile {
   isAdmin?: boolean;
   createdAt: number;
   interestEarned?: number;
+  lastActive?: number;
 }
 
 export interface ReferralCommissionLog {

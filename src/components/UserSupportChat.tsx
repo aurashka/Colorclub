@@ -277,9 +277,9 @@ export default function UserSupportChat({ user, appConfig, onBack }: UserSupport
                     <span className="text-slate-300 text-[10px]">{appConfig.supportEmail}</span>
                   </div>
                 )}
-                {appConfig.telegramSupport && (
+                {appConfig.telegramSupport && appConfig.telegramSupport.trim() !== '' && (
                   <a 
-                    href={appConfig.telegramSupport}
+                    href={appConfig.telegramSupport.startsWith('http') ? appConfig.telegramSupport.trim() : `https://t.me/${appConfig.telegramSupport.trim().replace('@', '')}`}
                     target="_blank"
                     rel="noreferrer"
                     className="flex items-center justify-between bg-sky-500/5 hover:bg-sky-500/10 p-2 rounded-xl border border-sky-500/15 text-sky-400 transition-all"
@@ -291,9 +291,9 @@ export default function UserSupportChat({ user, appConfig, onBack }: UserSupport
                     <ChevronLeft className="w-3.5 h-3.5 rotate-180" />
                   </a>
                 )}
-                {appConfig.whatsappSupport && (
+                {appConfig.whatsappSupport && appConfig.whatsappSupport.trim() !== '' && (
                   <a 
-                    href={appConfig.whatsappSupport}
+                    href={appConfig.whatsappSupport.startsWith('http') ? appConfig.whatsappSupport.trim() : `https://wa.me/${appConfig.whatsappSupport.trim().replace(/\+/g, '').replace(/\s/g, '')}`}
                     target="_blank"
                     rel="noreferrer"
                     className="flex items-center justify-between bg-emerald-500/5 hover:bg-emerald-500/10 p-2 rounded-xl border border-emerald-500/15 text-emerald-400 transition-all"
