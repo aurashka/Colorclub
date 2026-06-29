@@ -149,6 +149,7 @@ export interface GiftCoupon {
   expiryTimestamp: number; // calculated epoch timestamp. If unlimited, set to 9999999999999 (distant future)
   audienceType: 'everyone' | 'single_user';
   targetUserEmail?: string;
+  maxClaimsLimit?: number; // maximum total uses allowed (e.g. 1 for single-use, 10, or undefined/null for unlimited)
   claimedUsers?: { [userKey: string]: { timestamp: number, email: string, nickname: string } };
   createdAt: number;
 }

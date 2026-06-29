@@ -177,6 +177,16 @@ export default function ProfileSheets({
         return;
       }
 
+      // 3b. Check total claim limits
+      if (coupon.maxClaimsLimit && coupon.maxClaimsLimit > 0) {
+        const claimCount = coupon.claimedUsers ? Object.keys(coupon.claimedUsers).length : 0;
+        if (claimCount >= coupon.maxClaimsLimit) {
+          setGiftError('This promotional voucher has reached its maximum claim limit.');
+          setRedeemLoading(false);
+          return;
+        }
+      }
+
       // 4. Update the user's wallet wallet & write claimed users logs transactionally
       const userRef = ref(db, `users/${emailKey}`);
       const userSnap = await get(userRef);

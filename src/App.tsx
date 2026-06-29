@@ -13,6 +13,7 @@ import ProfileSheets from './components/ProfileSheets';
 import WalletSection from './components/WalletSection';
 import AdminPanel from './components/AdminPanel';
 import CompleteProfileModal from './components/CompleteProfileModal';
+import UserSupportChat from './components/UserSupportChat';
 
 import { 
   Home as HomeIcon, Sparkles, User, ArrowLeft, ShieldCheck, 
@@ -23,7 +24,7 @@ export default function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [activeTab, setActiveTab] = useState<'home' | 'game' | 'profile' | 'login'>('game');
   const [showLoginPrompt, setShowLoginPrompt] = useState<boolean>(false);
-  const [activeSubView, setActiveSubView] = useState<'deposit' | 'withdrawal' | 'admin' | null>(null);
+  const [activeSubView, setActiveSubView] = useState<'deposit' | 'withdrawal' | 'admin' | 'support' | null>(null);
   const [walletSubTab, setWalletSubTab] = useState<'deposit' | 'withdrawal' | 'history'>('deposit');
   const [roomId, setRoomId] = useState<RoomType>('1m');
   const [activeProfileSheet, setActiveProfileSheet] = useState<string | null>(null);
@@ -153,6 +154,15 @@ export default function App() {
   const getUserKey = (profile: UserProfile): string => {
     return profile.email ? getEmailKey(profile.email) : (profile.phone || profile.uid);
   };
+
+  // Update document title dynamically based on App Configuration
+  useEffect(() => {
+    if (appConfig && appConfig.appName) {
+      document.title = appConfig.appName;
+    } else {
+      document.title = 'Colour Game';
+    }
+  }, [appConfig?.appName]);
 
   // 1. Restore login session on mount
   useEffect(() => {
@@ -1035,6 +1045,17 @@ export default function App() {
             </div>
           )}
 
+          {/* Subview Layer: Support (Full Screen Chat) */}
+          {activeSubView === 'support' && user && (
+            <div className="absolute inset-0 z-40 bg-[#0D121F]">
+              <UserSupportChat
+                user={user}
+                appConfig={appConfig}
+                onBack={() => setActiveSubView(null)}
+              />
+            </div>
+          )}
+
           {/* Main Tab Layer (When no subview is open) */}
           {!activeSubView && (
             <>
@@ -1079,7 +1100,13 @@ export default function App() {
                   }}
                   onNavigateToAdmin={() => setActiveSubView('admin')}
                   appConfig={appConfig}
-                  onOpenSheet={(sheet) => setActiveProfileSheet(sheet)}
+                  onOpenSheet={(sheet) => {
+                    if (sheet === 'help') {
+                      setActiveSubView('support');
+                    } else {
+                      setActiveProfileSheet(sheet);
+                    }
+                  }}
                   unreadSupportCount={userUnreadSupportCount}
                 />
               )}

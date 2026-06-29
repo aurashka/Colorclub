@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { UserProfile, DepositRequest, WithdrawalRequest, BidRecord, RoomType, GamePeriod, DepositChannel, DepositChannelField, WithdrawalField, AppConfig } from '../types';
 import { COLOR_MAP } from '../utils/gameUtils';
-import { ShieldAlert, Users, Check, X, DollarSign, Search, Settings, Radio, Plus, Percent, Calendar, Trash2, Clock, Landmark, Layers, Send, QrCode, CreditCard, Sparkles, Mail, MessageSquare, Ban, Edit, Ticket, UserCheck, AlertTriangle } from 'lucide-react';
+import { ShieldAlert, Users, Check, X, DollarSign, Search, Settings, Radio, Plus, Percent, Calendar, Trash2, Clock, Landmark, Layers, Send, QrCode, CreditCard, Sparkles, Mail, MessageSquare, Ban, Edit, Ticket, UserCheck, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { ref, set, update, push, onValue, get, remove } from 'firebase/database';
 import { db } from '../firebase';
 
@@ -90,15 +90,15 @@ export default function AdminPanel({
   const [customReason, setCustomReason] = useState('');
 
   // App Configuration Form States
-  const [cfgAppName, setCfgAppName] = useState(appConfig.appName);
+  const [cfgAppName, setCfgAppName] = useState(appConfig.appName || '');
   const [cfgCurrencySymbol, setCfgCurrencySymbol] = useState(appConfig.currencySymbol || '₹');
   const [cfgCurrencyName, setCfgCurrencyName] = useState(appConfig.currencyName || 'INR');
-  const [cfgMinDep, setCfgMinDep] = useState(appConfig.minDeposit.toString());
-  const [cfgMaxDep, setCfgMaxDep] = useState(appConfig.maxDeposit.toString());
-  const [cfgMinWith, setCfgMinWith] = useState(appConfig.minWithdrawal.toString());
-  const [cfgMaxWith, setCfgMaxWith] = useState(appConfig.maxWithdrawal.toString());
-  const [cfgTg, setCfgTg] = useState(appConfig.telegramSupport);
-  const [cfgWa, setCfgWa] = useState(appConfig.whatsappSupport);
+  const [cfgMinDep, setCfgMinDep] = useState((appConfig.minDeposit || 100).toString());
+  const [cfgMaxDep, setCfgMaxDep] = useState((appConfig.maxDeposit || 100000).toString());
+  const [cfgMinWith, setCfgMinWith] = useState((appConfig.minWithdrawal || 110).toString());
+  const [cfgMaxWith, setCfgMaxWith] = useState((appConfig.maxWithdrawal || 100000).toString());
+  const [cfgTg, setCfgTg] = useState(appConfig.telegramSupport || '');
+  const [cfgWa, setCfgWa] = useState(appConfig.whatsappSupport || '');
   const [cfgInterestRate, setCfgInterestRate] = useState((appConfig.interestRate !== undefined ? appConfig.interestRate : 0.03).toString());
   const [cfgSupportEmail, setCfgSupportEmail] = useState(appConfig.supportEmail || 'support@lottery7.vip');
   const [cfgSupportChatLink, setCfgSupportChatLink] = useState(appConfig.supportChatLink || '');
@@ -120,11 +120,15 @@ export default function AdminPanel({
   const [couponExpiryValue, setCouponExpiryValue] = useState('');
   const [couponAudienceType, setCouponAudienceType] = useState<'everyone' | 'single_user'>('everyone');
   const [couponTargetEmail, setCouponTargetEmail] = useState('');
+  const [couponMaxClaims, setCouponMaxClaims] = useState<'unlimited' | 'single' | 'custom'>('unlimited');
+  const [couponMaxClaimsValue, setCouponMaxClaimsValue] = useState<string>('1');
   const [viewingClaimsCoupon, setViewingClaimsCoupon] = useState<any | null>(null);
 
   // Active Support Chat State
   const [activeSupportChatKey, setActiveSupportChatKey] = useState<string | null>(null);
   const [adminReplyText, setAdminReplyText] = useState('');
+  const [supportChatFilter, setSupportChatFilter] = useState<'all' | 'unread' | 'blocked'>('all');
+  const [supportChatSearch, setSupportChatSearch] = useState('');
 
   // Fetch Coupons
   React.useEffect(() => {
@@ -166,15 +170,15 @@ export default function AdminPanel({
 
   // Sync state if prop changes
   React.useEffect(() => {
-    setCfgAppName(appConfig.appName);
+    setCfgAppName(appConfig.appName || '');
     setCfgCurrencySymbol(appConfig.currencySymbol || '₹');
     setCfgCurrencyName(appConfig.currencyName || 'INR');
-    setCfgMinDep(appConfig.minDeposit.toString());
-    setCfgMaxDep(appConfig.maxDeposit.toString());
-    setCfgMinWith(appConfig.minWithdrawal.toString());
-    setCfgMaxWith(appConfig.maxWithdrawal.toString());
-    setCfgTg(appConfig.telegramSupport);
-    setCfgWa(appConfig.whatsappSupport);
+    setCfgMinDep((appConfig.minDeposit || 100).toString());
+    setCfgMaxDep((appConfig.maxDeposit || 100000).toString());
+    setCfgMinWith((appConfig.minWithdrawal || 110).toString());
+    setCfgMaxWith((appConfig.maxWithdrawal || 100000).toString());
+    setCfgTg(appConfig.telegramSupport || '');
+    setCfgWa(appConfig.whatsappSupport || '');
     setCfgInterestRate((appConfig.interestRate !== undefined ? appConfig.interestRate : 0.03).toString());
     setCfgSupportEmail(appConfig.supportEmail || 'support@lottery7.vip');
     setCfgSupportChatLink(appConfig.supportChatLink || '');
@@ -189,19 +193,19 @@ export default function AdminPanel({
 
     try {
       await onUpdateAppConfig({
-        appName: cfgAppName.trim(),
+        appName: (cfgAppName || '').trim(),
         minDeposit: Number(cfgMinDep),
         maxDeposit: Number(cfgMaxDep),
         minWithdrawal: Number(cfgMinWith),
         maxWithdrawal: Number(cfgMaxWith),
-        telegramSupport: cfgTg.trim(),
-        whatsappSupport: cfgWa.trim(),
-        currencySymbol: cfgCurrencySymbol.trim(),
-        currencyName: cfgCurrencyName.trim(),
+        telegramSupport: (cfgTg || '').trim(),
+        whatsappSupport: (cfgWa || '').trim(),
+        currencySymbol: (cfgCurrencySymbol || '').trim(),
+        currencyName: (cfgCurrencyName || '').trim(),
         interestRate: Number(cfgInterestRate),
-        supportEmail: cfgSupportEmail.trim(),
-        supportChatLink: cfgSupportChatLink.trim(),
-        referralDomain: cfgReferralDomain.trim()
+        supportEmail: (cfgSupportEmail || '').trim(),
+        supportChatLink: (cfgSupportChatLink || '').trim(),
+        referralDomain: (cfgReferralDomain || '').trim()
       });
       setCfgSuccess('Global App Configuration and Currency settings updated successfully!');
     } catch (err: any) {
@@ -1988,6 +1992,18 @@ export default function AdminPanel({
                   expiryTimestamp = Date.now() + val * 24 * 60 * 60 * 1000;
                 }
 
+                let maxClaimsLimit: number | null = null;
+                if (couponMaxClaims === 'single') {
+                  maxClaimsLimit = 1;
+                } else if (couponMaxClaims === 'custom') {
+                  const lim = parseInt(couponMaxClaimsValue);
+                  if (isNaN(lim) || lim <= 0) {
+                    alert('Please enter a valid claims limit greater than 0.');
+                    return;
+                  }
+                  maxClaimsLimit = lim;
+                }
+
                 try {
                   const couponData = {
                     code: codeUpper,
@@ -1997,6 +2013,7 @@ export default function AdminPanel({
                     expiryTimestamp,
                     audienceType: couponAudienceType,
                     targetUserEmail: couponAudienceType === 'single_user' ? couponTargetEmail.trim().toLowerCase() : null,
+                    maxClaimsLimit,
                     createdAt: Date.now()
                   };
 
@@ -2008,6 +2025,8 @@ export default function AdminPanel({
                   setCouponTargetEmail('');
                   setCouponExpiryType('unlimited');
                   setCouponAudienceType('everyone');
+                  setCouponMaxClaims('unlimited');
+                  setCouponMaxClaimsValue('1');
                 } catch (err: any) {
                   alert('Failed to save coupon: ' + err.message);
                 }
@@ -2109,6 +2128,34 @@ export default function AdminPanel({
                       />
                     </div>
                   )}
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Max Claims Limit (Global Usage)</label>
+                    <select
+                      value={couponMaxClaims}
+                      onChange={(e: any) => setCouponMaxClaims(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-850 rounded-xl text-xs text-white focus:outline-none focus:border-purple-500/30"
+                    >
+                      <option value="unlimited">Unlimited claims (1 claim per user)</option>
+                      <option value="single">Single Use (1 claim total globally)</option>
+                      <option value="custom">Custom claims limit (Custom total uses count)</option>
+                    </select>
+                  </div>
+
+                  {couponMaxClaims === 'custom' && (
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Custom Claims Limit Count</label>
+                      <input
+                        type="number"
+                        min="1"
+                        required
+                        value={couponMaxClaimsValue}
+                        onChange={(e) => setCouponMaxClaimsValue(e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-950 border border-slate-850 rounded-xl text-xs text-white font-mono focus:outline-none focus:border-purple-500/30"
+                        placeholder="e.g. 10"
+                      />
+                    </div>
+                  )}
                 </div>
 
                 <button
@@ -2150,7 +2197,8 @@ export default function AdminPanel({
                           
                           <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[9px] text-slate-500">
                             <div>Amount: <strong className="text-purple-400 font-mono">{appConfig.currencySymbol}{c.amount.toFixed(2)}</strong></div>
-                            <div>Limit: <strong className="text-slate-300 capitalize">{c.audienceType === 'single_user' ? 'Single email restriction' : 'Open / Everyone'}</strong></div>
+                            <div>Limit: <strong className="text-slate-300 capitalize">{c.audienceType === 'single_user' ? 'Single email' : 'Everyone'}</strong></div>
+                            <div>Uses Limit: <strong className="text-amber-400 font-mono">{c.maxClaimsLimit ? `${claimsCount} / ${c.maxClaimsLimit}` : 'Unlimited'}</strong></div>
                             
                             <div className="col-span-2 mt-0.5">
                               Expiry: <span className="text-slate-400 font-mono">
@@ -2240,163 +2288,286 @@ export default function AdminPanel({
             <div>
               <h3 className="text-sm font-black uppercase text-purple-400 tracking-wider flex items-center space-x-1.5">
                 <MessageSquare className="h-4 w-4" />
-                <span>Live Custom Help Chat Desk</span>
+                <span>Live Help Desk Support</span>
               </h3>
-              <p className="text-[10px] text-slate-500 font-bold uppercase mt-0.5">Admin Support gateway, live message streaming & user block controllers</p>
+              <p className="text-[10px] text-slate-500 font-bold uppercase mt-0.5">
+                {activeSupportChatKey ? 'Active Conversation' : 'Inbound Support Inbox & Filters'}
+              </p>
             </div>
           </div>
 
           {/* Quick Email configurations inside Support Chat tab */}
-          <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-4">
-            <form onSubmit={async (e) => {
-              e.preventDefault();
-              try {
-                await update(ref(db, 'app_config'), { supportEmail: cfgSupportEmail });
-                alert('Support email edited successfully.');
-              } catch (err: any) {
-                alert('Error editing support email: ' + err.message);
-              }
-            }} className="flex flex-col sm:flex-row items-end gap-3">
-              <div className="flex-1">
-                <label className="block text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Admin Support Email (Displays on help page)</label>
-                <input
-                  type="email"
-                  required
-                  value={cfgSupportEmail}
-                  onChange={(e) => setCfgSupportEmail(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-850 rounded-xl text-xs text-white focus:outline-none focus:border-purple-500/30 font-mono"
-                  placeholder="e.g. support@colorclub.win"
-                />
-              </div>
-              <button
-                type="submit"
-                className="bg-purple-500 hover:bg-purple-400 text-slate-950 font-black text-xs uppercase tracking-wider px-4 py-2.5 rounded-xl cursor-pointer shrink-0"
-              >
-                Save Email
-              </button>
-            </form>
-          </div>
-
-          {/* Side by side chats grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start h-[550px] min-h-[550px]">
-            
-            {/* Left Box: Active user conversation threads */}
-            <div className="lg:col-span-5 bg-slate-900/40 border border-slate-800 rounded-2xl p-4 flex flex-col h-full overflow-hidden">
-              <span className="text-[10px] font-black uppercase text-purple-400 block border-b border-purple-500/10 pb-2 mb-3">
-                Active Support Threads ({supportChats.length})
-              </span>
-
-              {supportChats.length === 0 ? (
-                <div className="my-auto text-center space-y-2 p-6 text-slate-600">
-                  <MessageSquare className="w-8 h-8 text-slate-800 mx-auto" />
-                  <p className="text-xs">No support chats recorded in firebase database yet.</p>
+          {!activeSupportChatKey && (
+            <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-4">
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                try {
+                  await update(ref(db, 'app_config'), { supportEmail: cfgSupportEmail });
+                  alert('Support email edited successfully.');
+                } catch (err: any) {
+                  alert('Error editing support email: ' + err.message);
+                }
+              }} className="flex flex-col sm:flex-row items-end gap-3">
+                <div className="flex-1">
+                  <label className="block text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Admin Support Email (Displays on help page)</label>
+                  <input
+                    type="email"
+                    required
+                    value={cfgSupportEmail}
+                    onChange={(e) => setCfgSupportEmail(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-850 rounded-xl text-xs text-white focus:outline-none focus:border-purple-500/30 font-mono"
+                    placeholder="e.g. support@colorclub.win"
+                  />
                 </div>
-              ) : (
-                <div className="flex-1 overflow-y-auto space-y-2 pr-1 min-h-0">
-                  {supportChats.map((chat) => {
-                    const isSelected = activeSupportChatKey === chat.userKey;
-                    const hasUnread = chat.unreadCountForAdmin > 0;
-                    return (
-                      <div 
-                        key={chat.userKey}
-                        onClick={() => {
-                          setActiveSupportChatKey(chat.userKey);
-                          // Reset admin unread state
-                          update(ref(db, `support_chats/${chat.userKey}`), { unreadCountForAdmin: 0 });
-                        }}
-                        className={`p-3 rounded-xl border transition-all cursor-pointer flex flex-col space-y-1.5 ${
-                          isSelected 
-                            ? 'bg-purple-500/10 border-purple-500/40' 
-                            : 'bg-slate-950/40 border-slate-850 hover:bg-slate-900/50'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center space-x-1.5">
-                            <span className="text-xs text-white font-extrabold">{chat.nickname || 'Gamer'}</span>
-                            {hasUnread && (
-                              <span className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse" />
-                            )}
-                          </div>
-                          
-                          <span className="text-[8px] text-slate-600 font-mono">
-                            {chat.lastMessageTimestamp ? new Date(chat.lastMessageTimestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center justify-between text-[9px] text-slate-500">
-                          <span className="font-mono truncate max-w-[170px]">{chat.email}</span>
-                          
-                          <div className="flex items-center space-x-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
-                            {/* Block Toggle */}
-                            <button
-                              onClick={() => {
-                                const confirmText = chat.blocked ? "Turn ON chat for this user?" : "Turn OFF / Disable chat for this user?";
-                                if (confirm(confirmText)) {
-                                  update(ref(db, `support_chats/${chat.userKey}`), { blocked: !chat.blocked });
-                                }
-                              }}
-                              className={`p-1 rounded cursor-pointer ${chat.blocked ? 'text-red-400 bg-red-500/10' : 'text-slate-500 hover:text-slate-200 bg-slate-900'}`}
-                              title={chat.blocked ? "Unblock Chat" : "Block Chat"}
-                            >
-                              <Ban className="w-3.5 h-3.5" />
-                            </button>
-
-                            {/* Clear messages */}
-                            <button
-                              onClick={() => {
-                                if (confirm(`Clear all messages in conversation for ${chat.email}?`)) {
-                                  remove(ref(db, `support_chats/${chat.userKey}/messages`));
-                                }
-                              }}
-                              className="p-1 rounded bg-slate-900 text-slate-500 hover:text-slate-200 cursor-pointer"
-                              title="Clear Messages"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-
-                            {/* Delete Chat completely */}
-                            <button
-                              onClick={() => {
-                                if (confirm(`Delete the entire support chat object from firebase for ${chat.email}?`)) {
-                                  remove(ref(db, `support_chats/${chat.userKey}`));
-                                  if (activeSupportChatKey === chat.userKey) {
-                                    setActiveSupportChatKey(null);
-                                  }
-                                }
-                              }}
-                              className="p-1 rounded bg-slate-900 text-red-400 hover:text-red-300 cursor-pointer"
-                              title="Delete conversation from Firebase"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+                <button
+                  type="submit"
+                  className="bg-purple-500 hover:bg-purple-400 text-slate-950 font-black text-xs uppercase tracking-wider px-4 py-2.5 rounded-xl cursor-pointer shrink-0"
+                >
+                  Save Email
+                </button>
+              </form>
             </div>
+          )}
 
-            {/* Right Box: Chat Conversation Thread */}
-            <div className="lg:col-span-7 bg-slate-900/40 border border-slate-800 rounded-2xl p-4 flex flex-col h-full overflow-hidden">
-              {activeSupportChatKey ? (() => {
+          {/* Split view: Either User List Page OR Chat Page */}
+          {!activeSupportChatKey ? (
+            /* PAGE 1: CHAT USER LIST (FULL WIDTH INBOX) */
+            <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-5 flex flex-col space-y-4">
+              {/* Header with Search and Filter tabs */}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-3 border-b border-slate-850">
+                <div className="flex items-center space-x-2">
+                  <span className="text-xs font-black uppercase text-purple-400">
+                    Active Threads ({supportChats.length})
+                  </span>
+                </div>
+
+                {/* Filters Row */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    onClick={() => setSupportChatFilter('all')}
+                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider border cursor-pointer ${
+                      supportChatFilter === 'all'
+                        ? 'bg-purple-500/10 border-purple-500/30 text-purple-400'
+                        : 'bg-slate-950 border-slate-850 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    All
+                  </button>
+                  <button
+                    onClick={() => setSupportChatFilter('unread')}
+                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider border cursor-pointer relative ${
+                      supportChatFilter === 'unread'
+                        ? 'bg-red-500/10 border-red-500/30 text-red-400'
+                        : 'bg-slate-950 border-slate-850 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <span>Unread Only</span>
+                    {unreadChatCount > 0 && (
+                      <span className="ml-1 bg-red-500 text-white text-[8px] font-black px-1 rounded-full">{unreadChatCount}</span>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setSupportChatFilter('blocked')}
+                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider border cursor-pointer ${
+                      supportChatFilter === 'blocked'
+                        ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+                        : 'bg-slate-950 border-slate-850 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    Blocked
+                  </button>
+                </div>
+              </div>
+
+              {/* Search input bar */}
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Search chats by Nickname, Email address or Phone number..."
+                  value={supportChatSearch}
+                  onChange={(e) => setSupportChatSearch(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2.5 bg-slate-950 border border-slate-850 rounded-xl text-xs text-white focus:outline-none focus:border-purple-500/30"
+                />
+                <Search className="absolute left-3 top-3 h-4 w-4 text-slate-500" />
+                {supportChatSearch && (
+                  <button
+                    onClick={() => setSupportChatSearch('')}
+                    className="absolute right-3 top-3 text-[10px] text-slate-500 hover:text-slate-300 font-bold"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+
+              {/* Threads List layout */}
+              {(() => {
+                const filteredList = supportChats.filter((chat) => {
+                  const query = supportChatSearch.toLowerCase().trim();
+                  if (query) {
+                    const emailMatch = (chat.email || '').toLowerCase().includes(query);
+                    const nicknameMatch = (chat.nickname || '').toLowerCase().includes(query);
+                    const phoneMatch = (chat.phone || '').includes(query);
+                    if (!emailMatch && !nicknameMatch && !phoneMatch) {
+                      return false;
+                    }
+                  }
+                  if (supportChatFilter === 'unread') {
+                    return chat.unreadCountForAdmin > 0;
+                  }
+                  if (supportChatFilter === 'blocked') {
+                    return !!chat.blocked;
+                  }
+                  return true;
+                });
+
+                if (filteredList.length === 0) {
+                  return (
+                    <div className="py-12 text-center space-y-3">
+                      <MessageSquare className="w-12 h-12 text-slate-800 mx-auto" />
+                      <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">No matching threads found</p>
+                      <p className="text-[10px] text-slate-600">Try adjusting your filters or search keywords.</p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[600px] overflow-y-auto pr-1">
+                    {filteredList.map((chat) => {
+                      const hasUnread = chat.unreadCountForAdmin > 0;
+                      return (
+                        <div
+                          key={chat.userKey}
+                          onClick={() => {
+                            setActiveSupportChatKey(chat.userKey);
+                            update(ref(db, `support_chats/${chat.userKey}`), { unreadCountForAdmin: 0 });
+                          }}
+                          className={`p-4 rounded-xl border bg-slate-950/40 border-slate-850 hover:bg-slate-900/50 transition-all cursor-pointer flex flex-col justify-between space-y-3.5 relative`}
+                        >
+                          <div className="flex items-start justify-between">
+                            <div className="flex items-center space-x-2.5">
+                              {/* Avatar circle */}
+                              <div className="w-8 h-8 rounded-full bg-purple-500/10 border border-purple-500/20 flex items-center justify-center font-black text-purple-400 uppercase text-xs">
+                                {(chat.nickname || chat.email || 'G')[0]}
+                              </div>
+                              <div>
+                                <div className="flex items-center space-x-1.5">
+                                  <span className="text-xs text-white font-black">{chat.nickname || 'Gamer'}</span>
+                                  {hasUnread && (
+                                    <span className="px-1.5 py-0.5 bg-red-500 text-white text-[8px] font-black uppercase rounded animate-pulse">
+                                      New message
+                                    </span>
+                                  )}
+                                  {chat.blocked && (
+                                    <span className="px-1.5 py-0.5 bg-amber-500/10 text-amber-400 text-[8px] font-black uppercase rounded">
+                                      Blocked
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="text-[10px] text-slate-500 font-mono block mt-0.5">{chat.email}</span>
+                              </div>
+                            </div>
+
+                            <span className="text-[8px] text-slate-600 font-mono">
+                              {chat.lastMessageTimestamp ? new Date(chat.lastMessageTimestamp).toLocaleString() : ''}
+                            </span>
+                          </div>
+
+                          {/* Quick Actions and open button */}
+                          <div className="flex items-center justify-between pt-2 border-t border-slate-900" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-center space-x-1.5">
+                              {/* Block Action */}
+                              <button
+                                onClick={() => {
+                                  const confirmText = chat.blocked ? "Turn ON chat for this user?" : "Turn OFF / Disable chat for this user?";
+                                  if (confirm(confirmText)) {
+                                    update(ref(db, `support_chats/${chat.userKey}`), { blocked: !chat.blocked });
+                                  }
+                                }}
+                                className={`p-1.5 rounded-lg border cursor-pointer ${
+                                  chat.blocked
+                                    ? 'text-red-400 bg-red-500/10 border-red-500/20'
+                                    : 'text-slate-500 border-slate-850 hover:text-slate-200 hover:bg-slate-900 bg-slate-950/80'
+                                }`}
+                                title={chat.blocked ? "Unblock Chat" : "Block Chat"}
+                              >
+                                <Ban className="w-3.5 h-3.5" />
+                              </button>
+
+                              {/* Clear History */}
+                              <button
+                                onClick={() => {
+                                  if (confirm(`Clear all messages in conversation for ${chat.email}?`)) {
+                                    remove(ref(db, `support_chats/${chat.userKey}/messages`));
+                                  }
+                                }}
+                                className="p-1.5 rounded-lg border border-slate-850 text-slate-500 hover:text-slate-200 hover:bg-slate-900 bg-slate-950/80 cursor-pointer"
+                                title="Clear Messages"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+
+                              {/* Delete Chat */}
+                              <button
+                                onClick={() => {
+                                  if (confirm(`Delete the entire support chat object from firebase for ${chat.email}?`)) {
+                                    remove(ref(db, `support_chats/${chat.userKey}`));
+                                  }
+                                }}
+                                className="p-1.5 rounded-lg border border-red-500/10 text-red-500 hover:text-red-400 hover:bg-red-500/10 bg-slate-950/80 cursor-pointer"
+                                title="Delete completely"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+
+                            <button
+                              onClick={() => {
+                                setActiveSupportChatKey(chat.userKey);
+                                update(ref(db, `support_chats/${chat.userKey}`), { unreadCountForAdmin: 0 });
+                              }}
+                              className="bg-purple-500 hover:bg-purple-400 text-slate-950 font-black text-[9px] uppercase tracking-wider px-3 py-1.5 rounded-lg flex items-center space-x-1 cursor-pointer"
+                            >
+                              <span>Open Chat</span>
+                              <ChevronRight className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+          ) : (
+            /* PAGE 2: CHAT CONVERSATION SCREEN (FULL WIDTH SINGLE CONVERSATION) */
+            <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-4 flex flex-col h-[580px] min-h-[580px] overflow-hidden">
+              {(() => {
                 const activeChat = supportChats.find(c => c.userKey === activeSupportChatKey);
                 const msgsList = activeChat?.messages ? Object.values(activeChat.messages).sort((a: any, b: any) => a.timestamp - b.timestamp) : [];
 
                 return (
                   <div className="flex-1 flex flex-col h-full overflow-hidden min-h-0">
-                    
-                    {/* Header bar */}
-                    <div className="bg-slate-950 p-3 rounded-xl border border-slate-850 flex items-center justify-between shrink-0 mb-3">
-                      <div>
-                        <div className="flex items-center space-x-1.5">
-                          <span className="text-xs text-white font-black uppercase tracking-wider">{activeChat?.nickname || 'Gamer'}</span>
-                          {activeChat?.blocked && (
-                            <span className="text-[8px] bg-red-500/10 text-red-400 font-black px-1 rounded uppercase">Blocked</span>
-                          )}
+                    {/* Upper Header bar */}
+                    <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-850 flex items-center justify-between shrink-0 mb-3">
+                      <div className="flex items-center space-x-3">
+                        {/* Back Arrow button */}
+                        <button
+                          onClick={() => setActiveSupportChatKey(null)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-900 transition-colors cursor-pointer flex items-center justify-center border border-slate-850 bg-slate-950"
+                        >
+                          <ChevronLeft className="h-4.5 w-4.5" />
+                          <span className="text-[10px] font-bold uppercase ml-1 pr-1 hidden sm:inline">Back to Inbox</span>
+                        </button>
+
+                        <div>
+                          <div className="flex items-center space-x-1.5">
+                            <span className="text-xs text-white font-black uppercase tracking-wider">{activeChat?.nickname || 'Gamer'}</span>
+                            {activeChat?.blocked && (
+                              <span className="text-[8px] bg-red-500/10 text-red-400 font-black px-1 rounded uppercase">Blocked</span>
+                            )}
+                          </div>
+                          <span className="text-[9px] text-slate-500 font-mono block mt-0.5">{activeChat?.email}</span>
                         </div>
-                        <span className="text-[9px] text-slate-500 font-mono block mt-0.5">{activeChat?.email}</span>
                       </div>
 
                       <button
@@ -2407,8 +2578,8 @@ export default function AdminPanel({
                           }
                         }}
                         className={`text-[9px] font-black uppercase tracking-wider px-2.5 py-1.5 rounded-lg border cursor-pointer ${
-                          activeChat?.blocked 
-                            ? 'bg-rose-500/15 border-rose-500/25 text-rose-400' 
+                          activeChat?.blocked
+                            ? 'bg-rose-500/15 border-rose-500/25 text-rose-400'
                             : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
                         }`}
                       >
@@ -2416,7 +2587,7 @@ export default function AdminPanel({
                       </button>
                     </div>
 
-                    {/* Messages panel */}
+                    {/* Chat Messages panel */}
                     <div className="flex-1 bg-slate-950/40 border border-slate-850/60 rounded-xl p-4 overflow-y-auto space-y-3 flex flex-col min-h-0 mb-3">
                       {msgsList.length === 0 ? (
                         <div className="my-auto text-center text-xs text-slate-600 font-bold p-6">
@@ -2426,19 +2597,19 @@ export default function AdminPanel({
                         msgsList.map((msg: any) => {
                           const isAdmin = msg.sender === 'admin';
                           return (
-                            <div 
+                            <div
                               key={msg.msgId}
                               className={`flex flex-col max-w-[80%] ${isAdmin ? 'self-end items-end' : 'self-start items-start'} space-y-1`}
                             >
                               <div className={`px-3 py-2 rounded-2xl text-xs leading-relaxed ${
-                                isAdmin 
-                                  ? 'bg-purple-500 text-slate-950 rounded-tr-none font-bold' 
+                                isAdmin
+                                  ? 'bg-purple-500 text-slate-950 rounded-tr-none font-bold'
                                   : 'bg-[#1E293B] text-slate-200 rounded-tl-none border border-slate-800'
                               }`}>
                                 {msg.text}
                               </div>
                               <span className="text-[8px] text-slate-600 font-mono">
-                                {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                {new Date(msg.timestamp).toLocaleString()}
                               </span>
                             </div>
                           );
@@ -2446,7 +2617,7 @@ export default function AdminPanel({
                       )}
                     </div>
 
-                    {/* Input Reply bar */}
+                    {/* Reply input control */}
                     <form onSubmit={async (e) => {
                       e.preventDefault();
                       if (!adminReplyText.trim() || !activeSupportChatKey) return;
@@ -2474,7 +2645,7 @@ export default function AdminPanel({
                         console.error('Failed to send admin reply: ', err);
                       }
                     }} className="flex items-center space-x-2 shrink-0">
-                      <input 
+                      <input
                         type="text"
                         value={adminReplyText}
                         onChange={(e) => setAdminReplyText(e.target.value)}
@@ -2484,22 +2655,16 @@ export default function AdminPanel({
                       <button
                         type="submit"
                         disabled={!adminReplyText.trim()}
-                        className="bg-purple-500 hover:bg-purple-400 disabled:opacity-40 text-slate-950 p-3 rounded-xl transition-all active:scale-95 cursor-pointer shrink-0"
+                        className="bg-purple-500 hover:bg-purple-400 disabled:opacity-40 text-slate-950 p-3 rounded-xl transition-all active:scale-95 cursor-pointer shrink-0 flex items-center justify-center"
                       >
                         <Send className="w-4.5 h-4.5" />
                       </button>
                     </form>
                   </div>
                 );
-              })() : (
-                <div className="my-auto text-center space-y-2 p-6 text-slate-600">
-                  <MessageSquare className="w-10 h-10 text-slate-800 mx-auto" />
-                  <p className="text-xs">No active thread selected.</p>
-                  <p className="text-[10px] text-slate-700">Select any thread from the list on the left to review support message histories and send replies.</p>
-                </div>
-              )}
+              })()}
             </div>
-          </div>
+          )}
         </div>
       )}
     </div>
