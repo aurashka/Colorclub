@@ -36,6 +36,7 @@ export default function LoginSignup({ onLoginSuccess, appConfig }: LoginSignupPr
   // Referral code check states
   const [inviteCodeStatus, setInviteCodeStatus] = useState<'idle' | 'valid' | 'invalid' | 'checking'>('idle');
   const [referredByUserNickname, setReferredByUserNickname] = useState('');
+  const [referredByUserKey, setReferredByUserKey] = useState('');
 
   // App Name from Firebase
   const [appName, setAppName] = useState(appConfig?.appName || 'LOTTERY7');
@@ -80,29 +81,35 @@ export default function LoginSignup({ onLoginSuccess, appConfig }: LoginSignupPr
         if (snap.exists()) {
           let found = false;
           let referrerName = '';
+          let referrerKey = '';
           snap.forEach((child) => {
             const val = child.val();
-            if (val.inviteCode === inviteCode.trim()) {
+            if (val.inviteCode && val.inviteCode.toUpperCase() === inviteCode.trim().toUpperCase()) {
               found = true;
               referrerName = val.nickname || val.email || 'User';
+              referrerKey = child.key || '';
             }
           });
 
           if (found) {
             setInviteCodeStatus('valid');
             setReferredByUserNickname(referrerName);
+            setReferredByUserKey(referrerKey);
           } else {
             setInviteCodeStatus('invalid');
             setReferredByUserNickname('');
+            setReferredByUserKey('');
           }
         } else {
           setInviteCodeStatus('invalid');
           setReferredByUserNickname('');
+          setReferredByUserKey('');
         }
       }).catch((err) => {
         console.error(err);
         setInviteCodeStatus('invalid');
         setReferredByUserNickname('');
+        setReferredByUserKey('');
       });
     }, 500);
 
@@ -182,7 +189,16 @@ export default function LoginSignup({ onLoginSuccess, appConfig }: LoginSignupPr
 
         const isDefaultAdmin = email.toLowerCase().trim() === 'admin@gmail.com' || email.toLowerCase().trim() === 'smartharshitmaan@gmail.com';
         const finalNickname = nickname.trim() || 'Gamer';
-        const ownInviteCode = Math.floor(10000000 + Math.random() * 90000000).toString();
+        
+        const generateAlphanumericCode = () => {
+          const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+          let code = '';
+          for (let i = 0; i < 6; i++) {
+            code += chars.charAt(Math.floor(Math.random() * chars.length));
+          }
+          return code;
+        };
+        const ownInviteCode = generateAlphanumericCode();
 
         const newUser: UserProfile = {
           uid: `user_${Date.now()}`,
@@ -192,7 +208,8 @@ export default function LoginSignup({ onLoginSuccess, appConfig }: LoginSignupPr
           nickname: finalNickname,
           wallet: 20, // $20 welcome signup bonus
           inviteCode: ownInviteCode,
-          referredBy: (inviteCode.trim() && inviteCodeStatus === 'valid') ? inviteCode.trim() : undefined,
+          referredBy: (inviteCode.trim() && inviteCodeStatus === 'valid') ? inviteCode.trim().toUpperCase() : undefined,
+          referredByUserKey: (inviteCode.trim() && inviteCodeStatus === 'valid') ? referredByUserKey : undefined,
           role: isDefaultAdmin ? 'admin' : 'user',
           isAdmin: isDefaultAdmin,
           createdAt: Date.now()

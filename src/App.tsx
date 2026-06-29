@@ -9,6 +9,7 @@ import LoginSignup from './components/LoginSignup';
 import HomeSection from './components/HomeSection';
 import GameSection from './components/GameSection';
 import ProfileSection from './components/ProfileSection';
+import ProfileSheets from './components/ProfileSheets';
 import WalletSection from './components/WalletSection';
 import AdminPanel from './components/AdminPanel';
 import CompleteProfileModal from './components/CompleteProfileModal';
@@ -20,10 +21,13 @@ import {
 
 export default function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
-  const [activeTab, setActiveTab] = useState<'home' | 'game' | 'profile'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'game' | 'profile' | 'login'>('game');
+  const [showLoginPrompt, setShowLoginPrompt] = useState<boolean>(false);
   const [activeSubView, setActiveSubView] = useState<'deposit' | 'withdrawal' | 'admin' | null>(null);
   const [walletSubTab, setWalletSubTab] = useState<'deposit' | 'withdrawal' | 'history'>('deposit');
   const [roomId, setRoomId] = useState<RoomType>('1m');
+  const [activeProfileSheet, setActiveProfileSheet] = useState<string | null>(null);
+  const [userUnreadSupportCount, setUserUnreadSupportCount] = useState(0);
   
   const [appConfig, setAppConfig] = useState<AppConfig>({
     appName: 'L7 LOTTERY7',
@@ -179,6 +183,24 @@ export default function App() {
     });
     return () => unsubscribe();
   }, [user?.email, user?.phone]);
+
+  // Real-time support chat unread count subscriber
+  useEffect(() => {
+    if (!user) {
+      setUserUnreadSupportCount(0);
+      return;
+    }
+    const userKey = getUserKey(user);
+    const unreadRef = ref(db, `support_chats/${userKey}/unreadCountForUser`);
+    const unsubscribe = onValue(unreadRef, (snap) => {
+      if (snap.exists()) {
+        setUserUnreadSupportCount(snap.val() as number);
+      } else {
+        setUserUnreadSupportCount(0);
+      }
+    });
+    return () => unsubscribe();
+  }, [user?.email, user?.phone, user?.uid]);
 
   // 3. Real-time subscriber for general database records
   useEffect(() => {
@@ -572,6 +594,7 @@ export default function App() {
     const key = getUserKey(profile);
     localStorage.setItem('prism_user_key', key);
     localStorage.setItem('prism_user_phone', profile.phone || '');
+    setActiveTab('game');
   };
 
   const handleSignOut = () => {
@@ -606,6 +629,50 @@ export default function App() {
     // 1. Deduct wallet balance from database
     const newWallet = activeProfile.wallet - totalCost;
     await update(userProfileRef, { wallet: newWallet });
+
+    // 1b. Distribute 5% referral bet commission
+    const referredByCode = activeProfile.referredBy;
+    if (referredByCode) {
+      let referrerKey = activeProfile.referredByUserKey;
+      
+      // Fallback lookup if referredByUserKey is not set in user profile
+      if (!referrerKey) {
+        const usersSnap = await get(ref(db, 'users'));
+        if (usersSnap.exists()) {
+          usersSnap.forEach((child) => {
+            const val = child.val();
+            if (val.inviteCode && val.inviteCode.toUpperCase() === referredByCode.toUpperCase()) {
+              referrerKey = child.key || '';
+            }
+          });
+        }
+      }
+
+      if (referrerKey) {
+        const commissionAmount = totalCost * 0.05;
+        const referrerRef = ref(db, `users/${referrerKey}`);
+        const referrerSnap = await get(referrerRef);
+        if (referrerSnap.exists()) {
+          const referrerProfile = referrerSnap.val() as UserProfile;
+          const referrerNewWallet = (referrerProfile.wallet || 0) + commissionAmount;
+          await update(referrerRef, { wallet: referrerNewWallet });
+
+          // Log referral bet commission
+          const logId = `com_bet_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+          const commissionLogRef = ref(db, `referral_commissions/${referrerKey}/${logId}`);
+          await set(commissionLogRef, {
+            logId,
+            referrerKey,
+            referredUserNickname: activeProfile.nickname || 'Gamer',
+            referredUserEmail: activeProfile.email || '',
+            type: 'bet',
+            amount: commissionAmount,
+            sourceAmount: totalCost,
+            timestamp: Date.now()
+          });
+        }
+      }
+    }
 
     // 2. Save bid record
     const bidId = `bid_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
@@ -738,7 +805,58 @@ export default function App() {
       if (userSnap.exists()) {
         const uProfile = userSnap.val() as UserProfile;
         const newBal = (uProfile.wallet || 0) + depRequest.amount;
-        await update(userRef, { wallet: newBal });
+        
+        let userUpdates: any = { wallet: newBal };
+        
+        // Handle 10% first-deposit commission
+        if (!uProfile.hasDeposited) {
+          userUpdates.hasDeposited = true;
+          
+          const referredByCode = uProfile.referredBy;
+          if (referredByCode) {
+            let referrerKey = uProfile.referredByUserKey;
+            
+            // Fallback search if referrerKey is not on the profile
+            if (!referrerKey) {
+              const usersSnap = await get(ref(db, 'users'));
+              if (usersSnap.exists()) {
+                usersSnap.forEach((child) => {
+                  const val = child.val();
+                  if (val.inviteCode && val.inviteCode.toUpperCase() === referredByCode.toUpperCase()) {
+                    referrerKey = child.key || '';
+                  }
+                });
+              }
+            }
+            
+            if (referrerKey) {
+              const commissionAmount = depRequest.amount * 0.10;
+              const referrerRef = ref(db, `users/${referrerKey}`);
+              const referrerSnap = await get(referrerRef);
+              if (referrerSnap.exists()) {
+                const referrerProfile = referrerSnap.val() as UserProfile;
+                const referrerNewWallet = (referrerProfile.wallet || 0) + commissionAmount;
+                await update(referrerRef, { wallet: referrerNewWallet });
+                
+                // Save commission log
+                const logId = `com_dep_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+                const commissionLogRef = ref(db, `referral_commissions/${referrerKey}/${logId}`);
+                await set(commissionLogRef, {
+                  logId,
+                  referrerKey,
+                  referredUserNickname: uProfile.nickname || 'Gamer',
+                  referredUserEmail: uProfile.email || '',
+                  type: 'deposit',
+                  amount: commissionAmount,
+                  sourceAmount: depRequest.amount,
+                  timestamp: Date.now()
+                });
+              }
+            }
+          }
+        }
+        
+        await update(userRef, userUpdates);
       }
     }
   };
@@ -824,27 +942,14 @@ export default function App() {
     await set(configRef, config);
   };
 
-  // Unauthenticated view (Wrapped in smartphone simulator)
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-[#070B14] flex items-center justify-center p-0 md:p-6 lg:p-8 font-sans selection:bg-amber-500/30">
-        <div className="w-full h-screen md:h-[860px] md:max-w-[430px] md:rounded-[36px] md:border-[10px] md:border-slate-900 md:shadow-[0_25px_60px_-15px_rgba(0,0,0,0.8)] bg-[#0F172A] flex flex-col relative overflow-hidden">
-          <div className="flex-1 overflow-y-auto overflow-x-hidden">
-            <LoginSignup onLoginSuccess={handleLoginSuccess} appConfig={appConfig} />
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   // Filter pending active user bids for the current active period & active room
-  const userActiveBids = activeBids.filter(
+  const userActiveBids = user ? activeBids.filter(
     (b) => b.userId === user.uid && b.periodId === periodDetails.periodId && b.roomId === roomId
-  );
+  ) : [];
 
-  const userRoomBids = activeBids.filter(
+  const userRoomBids = user ? activeBids.filter(
     (b) => b.userId === user.uid && b.roomId === roomId
-  );
+  ) : [];
 
   return (
     <div className="min-h-screen bg-[#070B14] flex items-center justify-center p-0 md:p-6 lg:p-8 font-sans selection:bg-amber-500/30">
@@ -855,7 +960,7 @@ export default function App() {
         <div className={`flex-1 overflow-y-auto overflow-x-hidden ${activeSubView ? 'pb-4' : 'pb-20'} custom-scrollbar relative bg-[#0D121F]`}>
           
           {/* Subview Layer: Wallet (Deposit / Withdrawal Separated) */}
-          {(activeSubView === 'deposit' || activeSubView === 'withdrawal') && (
+          {(activeSubView === 'deposit' || activeSubView === 'withdrawal') && user && (
             <div className="animate-in fade-in duration-300">
               {/* Back Header */}
               <div className="flex items-center space-x-2 bg-[#0B0F17] p-4 sticky top-0 border-b border-slate-900/80 z-30">
@@ -886,7 +991,7 @@ export default function App() {
           )}
 
           {/* Subview Layer: Admin */}
-          {activeSubView === 'admin' && user.role === 'admin' && (
+          {activeSubView === 'admin' && user && user.role === 'admin' && (
             <div className="animate-in fade-in duration-300">
               {/* Back Header */}
               <div className="flex items-center space-x-2 bg-[#0B0F17] p-4 sticky top-0 border-b border-slate-900/80 z-30">
@@ -936,7 +1041,7 @@ export default function App() {
               {activeTab === 'home' && (
                 <HomeSection 
                   onLaunchGame={() => setActiveTab('game')} 
-                  userPhone={user.phone} 
+                  userPhone={user?.phone || 'Guest'} 
                 />
               )}
               {activeTab === 'game' && (
@@ -953,12 +1058,17 @@ export default function App() {
                   history={unifiedHistory}
                   onPlaceBid={handlePlaceBid}
                   onNavigateToWallet={(subTab) => {
-                    setActiveSubView(subTab === 'withdrawal' ? 'withdrawal' : 'deposit');
+                    if (!user) {
+                      setShowLoginPrompt(true);
+                    } else {
+                      setActiveSubView(subTab === 'withdrawal' ? 'withdrawal' : 'deposit');
+                    }
                   }}
+                  onLoginPrompt={() => setShowLoginPrompt(true)}
                   appConfig={appConfig}
                 />
               )}
-              {activeTab === 'profile' && (
+              {activeTab === 'profile' && user && (
                 <ProfileSection
                   user={user}
                   deposits={deposits}
@@ -969,7 +1079,27 @@ export default function App() {
                   }}
                   onNavigateToAdmin={() => setActiveSubView('admin')}
                   appConfig={appConfig}
+                  onOpenSheet={(sheet) => setActiveProfileSheet(sheet)}
+                  unreadSupportCount={userUnreadSupportCount}
                 />
+              )}
+              {activeTab === 'login' && (
+                <div className="w-full flex flex-col bg-[#0F172A] relative min-h-full">
+                  <div className="flex items-center space-x-2 bg-[#0B0F17] p-4 border-b border-slate-900/80 sticky top-0 z-30">
+                    <button 
+                      onClick={() => setActiveTab('game')}
+                      className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-900 transition-colors cursor-pointer animate-in fade-in"
+                    >
+                      <ChevronLeft className="h-5 w-5" />
+                    </button>
+                    <span className="text-xs font-black uppercase text-amber-400 tracking-wider">
+                      Login / Register
+                    </span>
+                  </div>
+                  <div className="p-1">
+                    <LoginSignup onLoginSuccess={handleLoginSuccess} appConfig={appConfig} />
+                  </div>
+                </div>
               )}
             </>
           )}
@@ -1015,6 +1145,10 @@ export default function App() {
             {/* Profile Tab Button */}
             <button
               onClick={() => {
+                if (!user) {
+                  setShowLoginPrompt(true);
+                  return;
+                }
                 setActiveSubView(null);
                 setActiveTab('profile');
               }}
@@ -1037,11 +1171,65 @@ export default function App() {
         {/* Dynamic Complete Profile Modal popup when user profile missing fields */}
         {user && (
           <CompleteProfileModal 
-            user={user} 
             onUpdateSuccess={(updatedUser) => {
               setUser(updatedUser);
             }} 
+            user={user} 
           />
+        )}
+
+        {/* Real-time fixed bottom sheets for profile sub-menus */}
+        {user && activeProfileSheet && (
+          <ProfileSheets
+            activeSheet={activeProfileSheet}
+            onClose={() => setActiveProfileSheet(null)}
+            user={user}
+            appConfig={appConfig}
+            onNavigateToWallet={(subTab) => {
+              setActiveProfileSheet(null);
+              setActiveSubView(subTab === 'withdrawal' ? 'withdrawal' : 'deposit');
+            }}
+          />
+        )}
+
+        {/* Login Prompt Overlay Modal for unauthenticated actions */}
+        {showLoginPrompt && (
+          <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-5 z-50 animate-in fade-in duration-300">
+            <div className="bg-[#121824] border border-slate-800/80 rounded-2xl p-6 w-full max-w-[340px] text-center shadow-2xl relative overflow-hidden animate-in zoom-in-95 duration-200">
+              <div className="absolute -top-12 -left-12 w-24 h-24 bg-amber-500/10 rounded-full blur-xl"></div>
+              <div className="absolute -bottom-12 -right-12 w-24 h-24 bg-amber-500/10 rounded-full blur-xl"></div>
+              
+              <div className="mx-auto w-12 h-12 rounded-full bg-amber-500/15 border border-amber-500/30 flex items-center justify-center mb-4">
+                <AlertCircle className="w-6 h-6 text-amber-500 animate-pulse" />
+              </div>
+              
+              <h3 className="text-base font-black text-white mb-2 uppercase tracking-wider">
+                Authentication Required
+              </h3>
+              <p className="text-slate-400 text-xs mb-6 leading-relaxed">
+                You are not logged in. Please login or register to place bets, deposit funds, or access your profile!
+              </p>
+              
+              <div className="flex flex-col space-y-2">
+                <button
+                  onClick={() => {
+                    setShowLoginPrompt(false);
+                    setActiveSubView(null);
+                    setActiveTab('login');
+                  }}
+                  className="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-black py-2.5 rounded-xl transition-all uppercase tracking-wider text-[10px] shadow-md shadow-amber-500/20 active:scale-98 cursor-pointer"
+                >
+                  Login / Register
+                </button>
+                <button
+                  onClick={() => setShowLoginPrompt(false)}
+                  className="w-full bg-slate-900 hover:bg-slate-800 text-slate-400 font-bold py-2 rounded-xl transition-all text-[10px] border border-slate-800/60 cursor-pointer"
+                >
+                  Cancel & Explore
+                </button>
+              </div>
+            </div>
+          </div>
         )}
 
       </div>

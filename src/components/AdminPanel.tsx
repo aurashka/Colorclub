@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { UserProfile, DepositRequest, WithdrawalRequest, BidRecord, RoomType, GamePeriod, DepositChannel, DepositChannelField, WithdrawalField, AppConfig } from '../types';
 import { COLOR_MAP } from '../utils/gameUtils';
-import { ShieldAlert, Users, Check, X, DollarSign, Search, Settings, Radio, Plus, Percent, Calendar, Trash2, Clock, Landmark, Layers, Send, QrCode, CreditCard, Sparkles } from 'lucide-react';
-import { ref, set, update, push } from 'firebase/database';
+import { ShieldAlert, Users, Check, X, DollarSign, Search, Settings, Radio, Plus, Percent, Calendar, Trash2, Clock, Landmark, Layers, Send, QrCode, CreditCard, Sparkles, Mail, MessageSquare, Ban, Edit, Ticket, UserCheck, AlertTriangle } from 'lucide-react';
+import { ref, set, update, push, onValue, get, remove } from 'firebase/database';
 import { db } from '../firebase';
 
 interface AdminPanelProps {
@@ -67,7 +67,7 @@ export default function AdminPanel({
   onUpdateAppConfig,
 }: AdminPanelProps) {
   // Navigation
-  const [adminTab, setAdminTab] = useState<'transactions' | 'users' | 'manipulate' | 'payments' | 'appConfig'>('transactions');
+  const [adminTab, setAdminTab] = useState<'transactions' | 'users' | 'manipulate' | 'payments' | 'appConfig' | 'coupons' | 'supportChat'>('transactions');
   
   // Search State
   const [userSearch, setUserSearch] = useState('');
@@ -107,6 +107,62 @@ export default function AdminPanel({
   const [cfgLoading, setCfgLoading] = useState(false);
   const [cfgSuccess, setCfgSuccess] = useState('');
   const [cfgError, setCfgError] = useState('');
+
+  // Coupons and Support Chats local states
+  const [coupons, setCoupons] = useState<any[]>([]);
+  const [supportChats, setSupportChats] = useState<any[]>([]);
+  const [unreadChatCount, setUnreadChatCount] = useState(0);
+
+  // Coupon Creation Form States
+  const [couponCode, setCouponCode] = useState('');
+  const [couponAmount, setCouponAmount] = useState('');
+  const [couponExpiryType, setCouponExpiryType] = useState<'hours' | 'days' | 'unlimited'>('unlimited');
+  const [couponExpiryValue, setCouponExpiryValue] = useState('');
+  const [couponAudienceType, setCouponAudienceType] = useState<'everyone' | 'single_user'>('everyone');
+  const [couponTargetEmail, setCouponTargetEmail] = useState('');
+  const [viewingClaimsCoupon, setViewingClaimsCoupon] = useState<any | null>(null);
+
+  // Active Support Chat State
+  const [activeSupportChatKey, setActiveSupportChatKey] = useState<string | null>(null);
+  const [adminReplyText, setAdminReplyText] = useState('');
+
+  // Fetch Coupons
+  React.useEffect(() => {
+    const couponsRef = ref(db, 'admin_control/gift_coupons');
+    const unsubscribe = onValue(couponsRef, (snapshot) => {
+      const list: any[] = [];
+      if (snapshot.exists()) {
+        snapshot.forEach((child) => {
+          list.push({ ...child.val(), id: child.key });
+        });
+      }
+      setCoupons(list);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Fetch Support Chats
+  React.useEffect(() => {
+    const chatsRef = ref(db, 'support_chats');
+    const unsubscribe = onValue(chatsRef, (snapshot) => {
+      const list: any[] = [];
+      let unreadCount = 0;
+      if (snapshot.exists()) {
+        snapshot.forEach((child) => {
+          const chatVal = child.val();
+          list.push({ ...chatVal, userKey: child.key });
+          if (chatVal.unreadCountForAdmin > 0) {
+            unreadCount++;
+          }
+        });
+      }
+      // Sort: newest messages first
+      list.sort((a, b) => (b.lastMessageTimestamp || 0) - (a.lastMessageTimestamp || 0));
+      setSupportChats(list);
+      setUnreadChatCount(unreadCount);
+    });
+    return () => unsubscribe();
+  }, []);
 
   // Sync state if prop changes
   React.useEffect(() => {
@@ -580,6 +636,31 @@ export default function AdminPanel({
             }`}
           >
             Payment Gateways & Forms
+          </button>
+          <button
+            onClick={() => setAdminTab('coupons')}
+            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer min-w-max border ${
+              adminTab === 'coupons'
+                ? 'bg-[#1E293B] text-purple-400 border-purple-500/20 shadow-md'
+                : 'text-slate-400 border-transparent hover:text-slate-200 hover:bg-slate-800/50'
+            }`}
+          >
+            Gift Coupons ({coupons.length})
+          </button>
+          <button
+            onClick={() => setAdminTab('supportChat')}
+            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer min-w-max border relative ${
+              adminTab === 'supportChat'
+                ? 'bg-[#1E293B] text-purple-400 border-purple-500/20 shadow-md'
+                : 'text-slate-400 border-transparent hover:text-slate-200 hover:bg-slate-800/50'
+            }`}
+          >
+            <span>Live Help Support</span>
+            {unreadChatCount > 0 && (
+              <span className="ml-1.5 px-1.5 py-0.5 bg-red-500 text-white font-black rounded-full text-[8px] animate-bounce inline-block">
+                {unreadChatCount}
+              </span>
+            )}
           </button>
           <button
             onClick={() => setAdminTab('appConfig')}
@@ -1854,6 +1935,574 @@ export default function AdminPanel({
           </form>
         </div>
       )}
+
+      {/* 6. GIFT COUPONS TAB */}
+      {adminTab === 'coupons' && (
+        <div className="space-y-6 animate-in fade-in duration-200">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h3 className="text-sm font-black uppercase text-purple-400 tracking-wider flex items-center space-x-1.5">
+                <Ticket className="h-4 w-4" />
+                <span>Gift Card & Promo Coupon Management</span>
+              </h3>
+              <p className="text-[10px] text-slate-500 font-bold uppercase mt-0.5">Create custom vouchers, set restrictions & track real-time claims list</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            
+            {/* Left Column: Create Coupon Form */}
+            <div className="lg:col-span-5 bg-slate-900/40 border border-slate-800 rounded-2xl p-5 space-y-4">
+              <span className="text-[10px] font-black uppercase text-purple-400 block border-b border-purple-500/10 pb-2 flex items-center space-x-1.5">
+                <Plus className="h-3.5 w-3.5" />
+                <span>Create Custom Voucher Code</span>
+              </span>
+
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                const codeUpper = couponCode.trim().toUpperCase();
+                if (!codeUpper) {
+                  alert('Please enter a custom voucher code!');
+                  return;
+                }
+                const amt = parseFloat(couponAmount);
+                if (isNaN(amt) || amt <= 0) {
+                  alert('Voucher amount must be greater than zero.');
+                  return;
+                }
+
+                let expiryTimestamp = 9999999999999;
+                if (couponExpiryType === 'hours') {
+                  const val = parseFloat(couponExpiryValue);
+                  if (isNaN(val) || val <= 0) {
+                    alert('Please enter a valid expiry hours.');
+                    return;
+                  }
+                  expiryTimestamp = Date.now() + val * 60 * 60 * 1000;
+                } else if (couponExpiryType === 'days') {
+                  const val = parseFloat(couponExpiryValue);
+                  if (isNaN(val) || val <= 0) {
+                    alert('Please enter a valid expiry days.');
+                    return;
+                  }
+                  expiryTimestamp = Date.now() + val * 24 * 60 * 60 * 1000;
+                }
+
+                try {
+                  const couponData = {
+                    code: codeUpper,
+                    amount: amt,
+                    expiryType: couponExpiryType,
+                    expiryDuration: couponExpiryType !== 'unlimited' ? parseFloat(couponExpiryValue) : null,
+                    expiryTimestamp,
+                    audienceType: couponAudienceType,
+                    targetUserEmail: couponAudienceType === 'single_user' ? couponTargetEmail.trim().toLowerCase() : null,
+                    createdAt: Date.now()
+                  };
+
+                  await set(ref(db, `admin_control/gift_coupons/${codeUpper}`), couponData);
+                  alert(`Coupon "${codeUpper}" created successfully!`);
+                  setCouponCode('');
+                  setCouponAmount('');
+                  setCouponExpiryValue('');
+                  setCouponTargetEmail('');
+                  setCouponExpiryType('unlimited');
+                  setCouponAudienceType('everyone');
+                } catch (err: any) {
+                  alert('Failed to save coupon: ' + err.message);
+                }
+              }} className="space-y-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Custom Code Name</label>
+                  <input
+                    type="text"
+                    required
+                    value={couponCode}
+                    onChange={(e) => setCouponCode(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-850 rounded-xl text-xs text-white uppercase font-mono tracking-widest focus:outline-none focus:border-purple-500/30"
+                    placeholder="e.g. WELCOME100"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Voucher Wallet Amount ({appConfig.currencySymbol || '₹'})</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    value={couponAmount}
+                    onChange={(e) => setCouponAmount(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-850 rounded-xl text-xs text-white font-mono focus:outline-none focus:border-purple-500/30"
+                    placeholder="e.g. 100.00"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Expiry Type</label>
+                    <select
+                      value={couponExpiryType}
+                      onChange={(e: any) => setCouponExpiryType(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-850 rounded-xl text-xs text-white focus:outline-none focus:border-purple-500/30"
+                    >
+                      <option value="unlimited">Unlimited Duration</option>
+                      <option value="hours">Hours Expiry</option>
+                      <option value="days">Days Expiry</option>
+                    </select>
+                  </div>
+
+                  {couponExpiryType !== 'unlimited' && (
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Duration</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        required
+                        value={couponExpiryValue}
+                        onChange={(e) => setCouponExpiryValue(e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-950 border border-slate-850 rounded-xl text-xs text-white font-mono focus:outline-none focus:border-purple-500/30"
+                        placeholder={couponExpiryType === 'hours' ? 'e.g. 12' : 'e.g. 7'}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-3.5 pt-1">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Target Audience Limit</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setCouponAudienceType('everyone')}
+                        className={`py-2 text-center text-xs font-bold rounded-lg border uppercase ${
+                          couponAudienceType === 'everyone'
+                            ? 'bg-purple-500/10 border-purple-500/30 text-purple-400'
+                            : 'bg-slate-950 border-slate-850 text-slate-500 hover:text-slate-300'
+                        }`}
+                      >
+                        Everyone
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCouponAudienceType('single_user')}
+                        className={`py-2 text-center text-xs font-bold rounded-lg border uppercase ${
+                          couponAudienceType === 'single_user'
+                            ? 'bg-purple-500/10 border-purple-500/30 text-purple-400'
+                            : 'bg-slate-950 border-slate-850 text-slate-500 hover:text-slate-300'
+                        }`}
+                      >
+                        Single User Only
+                      </button>
+                    </div>
+                  </div>
+
+                  {couponAudienceType === 'single_user' && (
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Target User Email Address</label>
+                      <input
+                        type="email"
+                        required
+                        value={couponTargetEmail}
+                        onChange={(e) => setCouponTargetEmail(e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-950 border border-slate-850 rounded-xl text-xs text-white font-mono focus:outline-none focus:border-purple-500/30"
+                        placeholder="e.g. buyer@gmail.com"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full bg-purple-500 hover:bg-purple-400 text-slate-950 font-black py-3 rounded-xl text-xs uppercase tracking-wider cursor-pointer flex items-center justify-center space-x-1.5 shadow-md active:scale-98 transition-all"
+                >
+                  <Plus className="h-4 w-4" />
+                  <span>Generate Voucher Coupon</span>
+                </button>
+              </form>
+            </div>
+
+            {/* Right Column: Existing Coupons List */}
+            <div className="lg:col-span-7 bg-slate-900/40 border border-slate-800 rounded-2xl p-5 flex flex-col space-y-4">
+              <span className="text-[10px] font-black uppercase text-purple-400 block border-b border-purple-500/10 pb-2">
+                Active Vouchers & Promo Cards ({coupons.length})
+              </span>
+
+              {coupons.length === 0 ? (
+                <div className="bg-slate-950/30 border border-slate-900 p-8 rounded-xl text-center text-xs text-slate-600">
+                  No coupons found. Create your very first promo voucher code in the panel on the left.
+                </div>
+              ) : (
+                <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
+                  {coupons.map((c) => {
+                    const isExpired = Date.now() > c.expiryTimestamp;
+                    const claimsCount = c.claimedUsers ? Object.keys(c.claimedUsers).length : 0;
+                    return (
+                      <div key={c.code} className="bg-slate-950/40 border border-slate-850 rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="space-y-1">
+                          <div className="flex items-center space-x-2">
+                            <span className="font-mono text-xs font-black text-white tracking-widest">{c.code}</span>
+                            <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase ${
+                              isExpired ? 'bg-red-500/15 text-red-400' : 'bg-emerald-500/15 text-emerald-400'
+                            }`}>
+                              {isExpired ? 'Expired' : 'Active'}
+                            </span>
+                          </div>
+                          
+                          <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[9px] text-slate-500">
+                            <div>Amount: <strong className="text-purple-400 font-mono">{appConfig.currencySymbol}{c.amount.toFixed(2)}</strong></div>
+                            <div>Limit: <strong className="text-slate-300 capitalize">{c.audienceType === 'single_user' ? 'Single email restriction' : 'Open / Everyone'}</strong></div>
+                            
+                            <div className="col-span-2 mt-0.5">
+                              Expiry: <span className="text-slate-400 font-mono">
+                                {c.expiryTimestamp > 9999999999990 ? 'Unlimited Duration' : new Date(c.expiryTimestamp).toLocaleString()}
+                              </span>
+                            </div>
+                            {c.targetUserEmail && (
+                              <div className="col-span-2 text-rose-400 font-mono">Restricted Email: {c.targetUserEmail}</div>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center space-x-2 shrink-0">
+                          <button
+                            onClick={() => setViewingClaimsCoupon(c)}
+                            className="bg-slate-900 border border-slate-800 text-slate-300 font-black text-[9px] uppercase tracking-wider px-2.5 py-1.5 rounded-lg hover:bg-slate-850 cursor-pointer"
+                          >
+                            Claims ({claimsCount})
+                          </button>
+                          
+                          <button
+                            onClick={async () => {
+                              if (confirm(`Do you wish to delete and disable coupon code "${c.code}"? This will prevent any further claims.`)) {
+                                await remove(ref(db, `admin_control/gift_coupons/${c.code}`));
+                                alert('Coupon deleted.');
+                              }
+                            }}
+                            className="bg-red-500/10 border border-red-500/25 text-red-400 p-1.5 rounded-lg hover:bg-red-500/20 cursor-pointer"
+                            title="Delete Coupon"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Dialog modal for viewing voucher claimed users */}
+          {viewingClaimsCoupon && (
+            <div className="fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4">
+              <div className="bg-slate-950 border border-slate-800 rounded-2xl max-w-md w-full p-5 space-y-4 shadow-2xl relative">
+                <button
+                  onClick={() => setViewingClaimsCoupon(null)}
+                  className="absolute right-4 top-4 text-slate-500 hover:text-white"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+
+                <div>
+                  <h4 className="text-xs font-black uppercase text-purple-400 tracking-wider">Voucher Claim logs</h4>
+                  <span className="text-[10px] text-slate-500 font-mono block mt-0.5">Voucher Code: {viewingClaimsCoupon.code}</span>
+                </div>
+
+                <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+                  {viewingClaimsCoupon.claimedUsers ? (
+                    Object.values(viewingClaimsCoupon.claimedUsers).map((claim: any, idx: number) => (
+                      <div key={idx} className="bg-slate-900/60 p-3 rounded-xl border border-slate-850 flex justify-between items-center text-[10px]">
+                        <div>
+                          <p className="text-white font-extrabold">{claim.nickname || 'Gamer'}</p>
+                          <p className="text-slate-500 font-mono mt-0.5">{claim.email}</p>
+                        </div>
+                        <span className="text-[9px] text-slate-500 font-mono">
+                          {new Date(claim.timestamp).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                        </span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="p-8 text-center text-xs text-slate-600 font-medium">
+                      No users have claimed this voucher code yet.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 7. LIVE SUPPORT HELPCHAT TAB */}
+      {adminTab === 'supportChat' && (
+        <div className="space-y-6 animate-in fade-in duration-200">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h3 className="text-sm font-black uppercase text-purple-400 tracking-wider flex items-center space-x-1.5">
+                <MessageSquare className="h-4 w-4" />
+                <span>Live Custom Help Chat Desk</span>
+              </h3>
+              <p className="text-[10px] text-slate-500 font-bold uppercase mt-0.5">Admin Support gateway, live message streaming & user block controllers</p>
+            </div>
+          </div>
+
+          {/* Quick Email configurations inside Support Chat tab */}
+          <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-4">
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              try {
+                await update(ref(db, 'app_config'), { supportEmail: cfgSupportEmail });
+                alert('Support email edited successfully.');
+              } catch (err: any) {
+                alert('Error editing support email: ' + err.message);
+              }
+            }} className="flex flex-col sm:flex-row items-end gap-3">
+              <div className="flex-1">
+                <label className="block text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Admin Support Email (Displays on help page)</label>
+                <input
+                  type="email"
+                  required
+                  value={cfgSupportEmail}
+                  onChange={(e) => setCfgSupportEmail(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-850 rounded-xl text-xs text-white focus:outline-none focus:border-purple-500/30 font-mono"
+                  placeholder="e.g. support@colorclub.win"
+                />
+              </div>
+              <button
+                type="submit"
+                className="bg-purple-500 hover:bg-purple-400 text-slate-950 font-black text-xs uppercase tracking-wider px-4 py-2.5 rounded-xl cursor-pointer shrink-0"
+              >
+                Save Email
+              </button>
+            </form>
+          </div>
+
+          {/* Side by side chats grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start h-[550px] min-h-[550px]">
+            
+            {/* Left Box: Active user conversation threads */}
+            <div className="lg:col-span-5 bg-slate-900/40 border border-slate-800 rounded-2xl p-4 flex flex-col h-full overflow-hidden">
+              <span className="text-[10px] font-black uppercase text-purple-400 block border-b border-purple-500/10 pb-2 mb-3">
+                Active Support Threads ({supportChats.length})
+              </span>
+
+              {supportChats.length === 0 ? (
+                <div className="my-auto text-center space-y-2 p-6 text-slate-600">
+                  <MessageSquare className="w-8 h-8 text-slate-800 mx-auto" />
+                  <p className="text-xs">No support chats recorded in firebase database yet.</p>
+                </div>
+              ) : (
+                <div className="flex-1 overflow-y-auto space-y-2 pr-1 min-h-0">
+                  {supportChats.map((chat) => {
+                    const isSelected = activeSupportChatKey === chat.userKey;
+                    const hasUnread = chat.unreadCountForAdmin > 0;
+                    return (
+                      <div 
+                        key={chat.userKey}
+                        onClick={() => {
+                          setActiveSupportChatKey(chat.userKey);
+                          // Reset admin unread state
+                          update(ref(db, `support_chats/${chat.userKey}`), { unreadCountForAdmin: 0 });
+                        }}
+                        className={`p-3 rounded-xl border transition-all cursor-pointer flex flex-col space-y-1.5 ${
+                          isSelected 
+                            ? 'bg-purple-500/10 border-purple-500/40' 
+                            : 'bg-slate-950/40 border-slate-850 hover:bg-slate-900/50'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-1.5">
+                            <span className="text-xs text-white font-extrabold">{chat.nickname || 'Gamer'}</span>
+                            {hasUnread && (
+                              <span className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse" />
+                            )}
+                          </div>
+                          
+                          <span className="text-[8px] text-slate-600 font-mono">
+                            {chat.lastMessageTimestamp ? new Date(chat.lastMessageTimestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between text-[9px] text-slate-500">
+                          <span className="font-mono truncate max-w-[170px]">{chat.email}</span>
+                          
+                          <div className="flex items-center space-x-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                            {/* Block Toggle */}
+                            <button
+                              onClick={() => {
+                                const confirmText = chat.blocked ? "Turn ON chat for this user?" : "Turn OFF / Disable chat for this user?";
+                                if (confirm(confirmText)) {
+                                  update(ref(db, `support_chats/${chat.userKey}`), { blocked: !chat.blocked });
+                                }
+                              }}
+                              className={`p-1 rounded cursor-pointer ${chat.blocked ? 'text-red-400 bg-red-500/10' : 'text-slate-500 hover:text-slate-200 bg-slate-900'}`}
+                              title={chat.blocked ? "Unblock Chat" : "Block Chat"}
+                            >
+                              <Ban className="w-3.5 h-3.5" />
+                            </button>
+
+                            {/* Clear messages */}
+                            <button
+                              onClick={() => {
+                                if (confirm(`Clear all messages in conversation for ${chat.email}?`)) {
+                                  remove(ref(db, `support_chats/${chat.userKey}/messages`));
+                                }
+                              }}
+                              className="p-1 rounded bg-slate-900 text-slate-500 hover:text-slate-200 cursor-pointer"
+                              title="Clear Messages"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+
+                            {/* Delete Chat completely */}
+                            <button
+                              onClick={() => {
+                                if (confirm(`Delete the entire support chat object from firebase for ${chat.email}?`)) {
+                                  remove(ref(db, `support_chats/${chat.userKey}`));
+                                  if (activeSupportChatKey === chat.userKey) {
+                                    setActiveSupportChatKey(null);
+                                  }
+                                }
+                              }}
+                              className="p-1 rounded bg-slate-900 text-red-400 hover:text-red-300 cursor-pointer"
+                              title="Delete conversation from Firebase"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Right Box: Chat Conversation Thread */}
+            <div className="lg:col-span-7 bg-slate-900/40 border border-slate-800 rounded-2xl p-4 flex flex-col h-full overflow-hidden">
+              {activeSupportChatKey ? (() => {
+                const activeChat = supportChats.find(c => c.userKey === activeSupportChatKey);
+                const msgsList = activeChat?.messages ? Object.values(activeChat.messages).sort((a: any, b: any) => a.timestamp - b.timestamp) : [];
+
+                return (
+                  <div className="flex-1 flex flex-col h-full overflow-hidden min-h-0">
+                    
+                    {/* Header bar */}
+                    <div className="bg-slate-950 p-3 rounded-xl border border-slate-850 flex items-center justify-between shrink-0 mb-3">
+                      <div>
+                        <div className="flex items-center space-x-1.5">
+                          <span className="text-xs text-white font-black uppercase tracking-wider">{activeChat?.nickname || 'Gamer'}</span>
+                          {activeChat?.blocked && (
+                            <span className="text-[8px] bg-red-500/10 text-red-400 font-black px-1 rounded uppercase">Blocked</span>
+                          )}
+                        </div>
+                        <span className="text-[9px] text-slate-500 font-mono block mt-0.5">{activeChat?.email}</span>
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          const confirmText = activeChat?.blocked ? "Turn ON chat for this user?" : "Turn OFF / Disable chat for this user?";
+                          if (confirm(confirmText)) {
+                            update(ref(db, `support_chats/${activeSupportChatKey}`), { blocked: !activeChat?.blocked });
+                          }
+                        }}
+                        className={`text-[9px] font-black uppercase tracking-wider px-2.5 py-1.5 rounded-lg border cursor-pointer ${
+                          activeChat?.blocked 
+                            ? 'bg-rose-500/15 border-rose-500/25 text-rose-400' 
+                            : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        {activeChat?.blocked ? 'Enable User Chat' : 'Disable User Chat'}
+                      </button>
+                    </div>
+
+                    {/* Messages panel */}
+                    <div className="flex-1 bg-slate-950/40 border border-slate-850/60 rounded-xl p-4 overflow-y-auto space-y-3 flex flex-col min-h-0 mb-3">
+                      {msgsList.length === 0 ? (
+                        <div className="my-auto text-center text-xs text-slate-600 font-bold p-6">
+                          No messages in this chat thread. Send a reply below.
+                        </div>
+                      ) : (
+                        msgsList.map((msg: any) => {
+                          const isAdmin = msg.sender === 'admin';
+                          return (
+                            <div 
+                              key={msg.msgId}
+                              className={`flex flex-col max-w-[80%] ${isAdmin ? 'self-end items-end' : 'self-start items-start'} space-y-1`}
+                            >
+                              <div className={`px-3 py-2 rounded-2xl text-xs leading-relaxed ${
+                                isAdmin 
+                                  ? 'bg-purple-500 text-slate-950 rounded-tr-none font-bold' 
+                                  : 'bg-[#1E293B] text-slate-200 rounded-tl-none border border-slate-800'
+                              }`}>
+                                {msg.text}
+                              </div>
+                              <span className="text-[8px] text-slate-600 font-mono">
+                                {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    {/* Input Reply bar */}
+                    <form onSubmit={async (e) => {
+                      e.preventDefault();
+                      if (!adminReplyText.trim() || !activeSupportChatKey) return;
+
+                      try {
+                        const msgId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+                        const replyRef = ref(db, `support_chats/${activeSupportChatKey}/messages/${msgId}`);
+
+                        await set(replyRef, {
+                          msgId,
+                          sender: 'admin',
+                          text: adminReplyText.trim(),
+                          timestamp: Date.now()
+                        });
+
+                        const currentUnreadUser = activeChat?.unreadCountForUser || 0;
+                        await update(ref(db, `support_chats/${activeSupportChatKey}`), {
+                          unreadCountForUser: currentUnreadUser + 1,
+                          unreadCountForAdmin: 0,
+                          lastMessageTimestamp: Date.now()
+                        });
+
+                        setAdminReplyText('');
+                      } catch (err) {
+                        console.error('Failed to send admin reply: ', err);
+                      }
+                    }} className="flex items-center space-x-2 shrink-0">
+                      <input 
+                        type="text"
+                        value={adminReplyText}
+                        onChange={(e) => setAdminReplyText(e.target.value)}
+                        placeholder="Type administrator support reply..."
+                        className="flex-1 bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-xs text-white focus:outline-none focus:border-purple-500/30"
+                      />
+                      <button
+                        type="submit"
+                        disabled={!adminReplyText.trim()}
+                        className="bg-purple-500 hover:bg-purple-400 disabled:opacity-40 text-slate-950 p-3 rounded-xl transition-all active:scale-95 cursor-pointer shrink-0"
+                      >
+                        <Send className="w-4.5 h-4.5" />
+                      </button>
+                    </form>
+                  </div>
+                );
+              })() : (
+                <div className="my-auto text-center space-y-2 p-6 text-slate-600">
+                  <MessageSquare className="w-10 h-10 text-slate-800 mx-auto" />
+                  <p className="text-xs">No active thread selected.</p>
+                  <p className="text-[10px] text-slate-700">Select any thread from the list on the left to review support message histories and send replies.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+

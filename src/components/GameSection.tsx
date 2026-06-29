@@ -15,12 +15,13 @@ interface GameSectionProps {
   timeLeft: number;
   isLocked: boolean;
   totalDuration: number;
-  user: UserProfile;
+  user: UserProfile | null;
   activeBids: BidRecord[];
   userAllBids: BidRecord[];
   history: GamePeriod[];
   onPlaceBid: (selection: string, totalCost: number) => Promise<void>;
   onNavigateToWallet: (subTab: 'deposit' | 'withdrawal' | 'history') => void;
+  onLoginPrompt: () => void;
   appConfig: AppConfig;
 }
 
@@ -37,6 +38,7 @@ export default function GameSection({
   history,
   onPlaceBid,
   onNavigateToWallet,
+  onLoginPrompt,
   appConfig,
 }: GameSectionProps) {
   const [selectedSelection, setSelectedSelection] = useState<string | null>(null);
@@ -59,6 +61,10 @@ export default function GameSection({
 
   const handleSelection = (sel: string) => {
     if (isLocked) return;
+    if (!user) {
+      onLoginPrompt();
+      return;
+    }
     setSelectedSelection(sel);
     setError('');
     setSuccessMsg('');
@@ -80,9 +86,13 @@ export default function GameSection({
 
   const handleConfirmBid = async () => {
     if (!selectedSelection) return;
+    if (!user) {
+      onLoginPrompt();
+      return;
+    }
     const totalCost = baseAmount * multiplier;
-    if (totalCost > user.wallet) {
-      setError(`Insufficient balance. Cost: ${appConfig.currencySymbol}${totalCost.toFixed(2)}, Balance: ${appConfig.currencySymbol}${user.wallet.toFixed(2)}.`);
+    if (totalCost > (user.wallet ?? 0)) {
+      setError(`Insufficient balance. Cost: ${appConfig.currencySymbol}${totalCost.toFixed(2)}, Balance: ${appConfig.currencySymbol}${(user.wallet ?? 0).toFixed(2)}.`);
       return;
     }
 
@@ -167,22 +177,39 @@ export default function GameSection({
         </div>
 
         <div className="flex justify-between items-center">
-          <span className="text-2xl font-black font-mono tracking-tight text-[#3D2C08]">
-            {appConfig.currencySymbol}{(user.wallet !== undefined ? user.wallet : 0).toFixed(2)}
-          </span>
+          {user ? (
+            <span className="text-2xl font-black font-mono tracking-tight text-[#3D2C08]">
+              {appConfig.currencySymbol}{(user.wallet !== undefined ? user.wallet : 0).toFixed(2)}
+            </span>
+          ) : (
+            <span className="text-xs font-black uppercase tracking-wider text-[#3D2C08]/90">
+              Guest Mode (Explore)
+            </span>
+          )}
           <div className="flex space-x-2">
-            <button
-              onClick={() => onNavigateToWallet('deposit')}
-              className="bg-[#8C5D19] hover:bg-[#6D4812] text-white font-extrabold text-[10px] uppercase tracking-wider px-4.5 py-1.5 rounded-full transition-colors shadow-sm cursor-pointer"
-            >
-              Deposit
-            </button>
-            <button
-              onClick={() => onNavigateToWallet('withdrawal')}
-              className="border border-[#8C5D19] text-[#8C5D19] bg-transparent font-extrabold text-[10px] uppercase tracking-wider px-4.5 py-1.5 rounded-full hover:bg-[#8C5D19]/5 transition-all cursor-pointer"
-            >
-              Withdraw
-            </button>
+            {user ? (
+              <>
+                <button
+                  onClick={() => onNavigateToWallet('deposit')}
+                  className="bg-[#8C5D19] hover:bg-[#6D4812] text-white font-extrabold text-[10px] uppercase tracking-wider px-4.5 py-1.5 rounded-full transition-colors shadow-sm cursor-pointer"
+                >
+                  Deposit
+                </button>
+                <button
+                  onClick={() => onNavigateToWallet('withdrawal')}
+                  className="border border-[#8C5D19] text-[#8C5D19] bg-transparent font-extrabold text-[10px] uppercase tracking-wider px-4.5 py-1.5 rounded-full hover:bg-[#8C5D19]/5 transition-all cursor-pointer"
+                >
+                  Withdraw
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={onLoginPrompt}
+                className="bg-[#8C5D19] hover:bg-[#6D4812] text-white font-extrabold text-[10px] uppercase tracking-wider px-5 py-2 rounded-full transition-all shadow-md cursor-pointer animate-pulse"
+              >
+                Login / Register
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -621,7 +648,13 @@ export default function GameSection({
             Game Record
           </button>
           <button
-            onClick={() => setBottomTab('myHistory')}
+            onClick={() => {
+              if (!user) {
+                onLoginPrompt();
+              } else {
+                setBottomTab('myHistory');
+              }
+            }}
             className={`flex-1 py-2 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all cursor-pointer ${
               bottomTab === 'myHistory'
                 ? 'bg-gradient-to-r from-[#FFE194] to-[#E2B354] text-[#3D2C08] font-black shadow'

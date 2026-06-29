@@ -9,10 +9,23 @@ export interface UserProfile {
   wallet: number;
   inviteCode?: string;
   referredBy?: string;
+  referredByUserKey?: string;
+  hasDeposited?: boolean;
   role?: 'admin' | 'user';
   isAdmin?: boolean;
   createdAt: number;
   interestEarned?: number;
+}
+
+export interface ReferralCommissionLog {
+  logId: string;
+  referrerKey: string;
+  referredUserNickname: string;
+  referredUserEmail: string;
+  type: 'bet' | 'deposit';
+  amount: number;
+  sourceAmount: number;
+  timestamp: number;
 }
 
 export interface GamePeriod {
@@ -125,4 +138,35 @@ export interface AppConfig {
   supportEmail?: string;
   supportChatLink?: string;
   referralDomain?: string;
+}
+
+export interface GiftCoupon {
+  id: string;
+  code: string;
+  amount: number;
+  expiryType: 'hours' | 'days' | 'unlimited';
+  expiryDuration?: number;
+  expiryTimestamp: number; // calculated epoch timestamp. If unlimited, set to 9999999999999 (distant future)
+  audienceType: 'everyone' | 'single_user';
+  targetUserEmail?: string;
+  claimedUsers?: { [userKey: string]: { timestamp: number, email: string, nickname: string } };
+  createdAt: number;
+}
+
+export interface SupportMessage {
+  msgId: string;
+  sender: 'user' | 'admin';
+  text: string;
+  timestamp: number;
+}
+
+export interface SupportChat {
+  userKey: string;
+  email: string;
+  nickname: string;
+  messages?: { [msgId: string]: SupportMessage };
+  unreadCountForAdmin: number;
+  unreadCountForUser: number;
+  blocked?: boolean;
+  lastMessageTimestamp: number;
 }
