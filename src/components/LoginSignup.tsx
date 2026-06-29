@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { db } from '../firebase';
 import { ref, get, set } from 'firebase/database';
-import { UserProfile } from '../types';
-import { Smartphone, Mail, Lock, Eye, EyeOff, Award, HelpCircle, Headphones, ArrowLeft, ChevronDown } from 'lucide-react';
+import { UserProfile, AppConfig } from '../types';
+import { Mail, Lock, Eye, EyeOff, Award, ArrowLeft, ChevronDown } from 'lucide-react';
 
 interface LoginSignupProps {
   onLoginSuccess: (user: UserProfile) => void;
+  appConfig?: AppConfig;
 }
 
 export const getEmailKey = (email: string): string => {
@@ -14,17 +15,15 @@ export const getEmailKey = (email: string): string => {
     .replace(/\./g, '_');
 };
 
-export default function LoginSignup({ onLoginSuccess }: LoginSignupProps) {
+export default function LoginSignup({ onLoginSuccess, appConfig }: LoginSignupProps) {
   const [isLogin, setIsLogin] = useState(true);
-  const [tab, setTab] = useState<'phone' | 'email'>('phone');
   
   // Form fields
-  const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [nickname, setNickname] = useState('');
-  const [inviteCode, setInviteCode] = useState('5853117646974'); // prefilled default as seen in screenshot
+  const [inviteCode, setInviteCode] = useState('5853117646974'); // prefilled default
   const [rememberMe, setRememberMe] = useState(true);
   const [agreeTerms, setAgreeTerms] = useState(true);
 
@@ -33,6 +32,29 @@ export default function LoginSignup({ onLoginSuccess }: LoginSignupProps) {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Referral code check states
+  const [inviteCodeStatus, setInviteCodeStatus] = useState<'idle' | 'valid' | 'invalid' | 'checking'>('idle');
+  const [referredByUserNickname, setReferredByUserNickname] = useState('');
+
+  // App Name from Firebase
+  const [appName, setAppName] = useState(appConfig?.appName || 'LOTTERY7');
+
+  React.useEffect(() => {
+    if (appConfig?.appName) {
+      setAppName(appConfig.appName);
+    } else {
+      const appConfigRef = ref(db, 'admin_control/app_config');
+      get(appConfigRef).then((snap) => {
+        if (snap.exists()) {
+          const val = snap.val();
+          if (val.appName) {
+            setAppName(val.appName);
+          }
+        }
+      }).catch(console.error);
+    }
+  }, [appConfig]);
 
   React.useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -43,26 +65,58 @@ export default function LoginSignup({ onLoginSuccess }: LoginSignupProps) {
     }
   }, []);
 
-  const handleToggleTab = (selectedTab: 'phone' | 'email') => {
-    setTab(selectedTab);
-    setError('');
-  };
+  // Validate Referral Code on change with debounce
+  React.useEffect(() => {
+    if (!inviteCode.trim()) {
+      setInviteCodeStatus('idle');
+      setReferredByUserNickname('');
+      return;
+    }
+
+    setInviteCodeStatus('checking');
+    const delayDebounce = setTimeout(() => {
+      const usersRef = ref(db, 'users');
+      get(usersRef).then((snap) => {
+        if (snap.exists()) {
+          let found = false;
+          let referrerName = '';
+          snap.forEach((child) => {
+            const val = child.val();
+            if (val.inviteCode === inviteCode.trim()) {
+              found = true;
+              referrerName = val.nickname || val.email || 'User';
+            }
+          });
+
+          if (found) {
+            setInviteCodeStatus('valid');
+            setReferredByUserNickname(referrerName);
+          } else {
+            setInviteCodeStatus('invalid');
+            setReferredByUserNickname('');
+          }
+        } else {
+          setInviteCodeStatus('invalid');
+          setReferredByUserNickname('');
+        }
+      }).catch((err) => {
+        console.error(err);
+        setInviteCodeStatus('invalid');
+        setReferredByUserNickname('');
+      });
+    }, 500);
+
+    return () => clearTimeout(delayDebounce);
+  }, [inviteCode]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
     // Common validations
-    if (tab === 'phone') {
-      if (!phone || phone.length < 10) {
-        setError('Please enter a valid 10-digit mobile number.');
-        return;
-      }
-    } else {
-      if (!email || !email.includes('@') || !email.includes('.')) {
-        setError('Please enter a valid email address.');
-        return;
-      }
+    if (!email || !email.includes('@') || !email.includes('.')) {
+      setError('Please enter a valid email address.');
+      return;
     }
 
     if (!password) {
@@ -80,8 +134,12 @@ export default function LoginSignup({ onLoginSuccess }: LoginSignupProps) {
         setError('Passwords do not match.');
         return;
       }
-      if (tab === 'email' && !nickname.trim()) {
+      if (!nickname.trim()) {
         setError('Please enter a nickname.');
+        return;
+      }
+      if (inviteCode.trim() && inviteCodeStatus !== 'valid') {
+        setError('Only valid referral codes are accepted. Please enter a valid code or clear it.');
         return;
       }
       if (!agreeTerms) {
@@ -93,14 +151,14 @@ export default function LoginSignup({ onLoginSuccess }: LoginSignupProps) {
     setLoading(true);
 
     try {
-      const userKey = tab === 'phone' ? phone.trim() : getEmailKey(email);
+      const userKey = getEmailKey(email);
       const userRef = ref(db, `users/${userKey}`);
       const snapshot = await get(userRef);
 
       if (isLogin) {
         // Login Flow
         if (!snapshot.exists()) {
-          setError(tab === 'phone' ? 'Phone number not registered. Please sign up.' : 'Email address not found. Please sign up.');
+          setError('Email address not found. Please sign up.');
           setLoading(false);
           return;
         }
@@ -117,27 +175,24 @@ export default function LoginSignup({ onLoginSuccess }: LoginSignupProps) {
       } else {
         // Signup Flow
         if (snapshot.exists()) {
-          setError(tab === 'phone' ? 'Phone number already registered. Please login.' : 'Email already registered. Please login.');
+          setError('Email already registered. Please login.');
           setLoading(false);
           return;
         }
 
-        const isDefaultAdmin = tab === 'email' && (email.toLowerCase().trim() === 'admin@gmail.com' || email.toLowerCase().trim() === 'smartharshitmaan@gmail.com');
-        
-        // Generate automatic nickname for phone mode if empty
-        const finalNickname = nickname.trim() || (tab === 'phone' ? `User_${phone.slice(-4)}` : 'Gamer');
-
+        const isDefaultAdmin = email.toLowerCase().trim() === 'admin@gmail.com' || email.toLowerCase().trim() === 'smartharshitmaan@gmail.com';
+        const finalNickname = nickname.trim() || 'Gamer';
         const ownInviteCode = Math.floor(10000000 + Math.random() * 90000000).toString();
 
         const newUser: UserProfile = {
           uid: `user_${Date.now()}`,
-          email: tab === 'email' ? email.toLowerCase().trim() : '',
-          phone: tab === 'phone' ? phone.trim() : '',
+          email: email.toLowerCase().trim(),
+          phone: '',
           password,
           nickname: finalNickname,
           wallet: 20, // $20 welcome signup bonus
           inviteCode: ownInviteCode,
-          referredBy: inviteCode.trim() ? inviteCode.trim() : undefined,
+          referredBy: (inviteCode.trim() && inviteCodeStatus === 'valid') ? inviteCode.trim() : undefined,
           role: isDefaultAdmin ? 'admin' : 'user',
           isAdmin: isDefaultAdmin,
           createdAt: Date.now()
@@ -174,9 +229,9 @@ export default function LoginSignup({ onLoginSuccess }: LoginSignupProps) {
         {/* LOGO MATCHING SCREENSHOT */}
         <div className="flex items-center space-x-1.5">
           <div className="bg-gradient-to-r from-[#E5A93B] to-[#C18F2E] text-[#0B0A09] font-black italic text-sm px-2 py-0.5 rounded flex items-center justify-center transform skew-x-[-10deg]">
-            L7
+            {appName.trim().split(/\s+/).map(w => w[0]).join('').slice(0, 3).toUpperCase() || 'L7'}
           </div>
-          <span className="font-extrabold text-xs tracking-wider text-[#E5A93B]">LOTTERY7</span>
+          <span className="font-extrabold text-xs tracking-wider text-[#E5A93B]">{appName.toUpperCase()}</span>
         </div>
 
         {/* LANGUAGE SELECTOR */}
@@ -201,11 +256,8 @@ export default function LoginSignup({ onLoginSuccess }: LoginSignupProps) {
           </h1>
           <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
             {isLogin 
-              ? 'Please log in with your phone number or email' 
-              : 'Please register by phone number or email'}
-          </p>
-          <p className="text-[10px] text-amber-500/80 mt-0.5">
-            If you forget your password, please contact customer service
+              ? 'Please log in with your email address' 
+              : 'Please register with your email address'}
           </p>
         </div>
 
@@ -217,88 +269,29 @@ export default function LoginSignup({ onLoginSuccess }: LoginSignupProps) {
           </div>
         )}
 
-        {/* TAB SWITCHERS (Phone vs Email) */}
-        <div className="bg-[#181716] p-1 rounded-xl flex border border-[#3D2C08]/10 mb-6">
-          <button
-            type="button"
-            onClick={() => handleToggleTab('phone')}
-            className={`flex-1 py-3 text-center text-xs font-bold uppercase tracking-wider rounded-lg flex items-center justify-center space-x-2 transition-all cursor-pointer ${
-              tab === 'phone' 
-                ? 'bg-gradient-to-r from-[#E5A93B] to-[#C18F2E] text-[#0B0A09] shadow-md' 
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Smartphone className="h-4 w-4" />
-            <span>{isLogin ? 'phone number' : 'Register your phone'}</span>
-          </button>
-          
-          <button
-            type="button"
-            onClick={() => handleToggleTab('email')}
-            className={`flex-1 py-3 text-center text-xs font-bold uppercase tracking-wider rounded-lg flex items-center justify-center space-x-2 transition-all cursor-pointer ${
-              tab === 'email' 
-                ? 'bg-gradient-to-r from-[#E5A93B] to-[#C18F2E] text-[#0B0A09] shadow-md' 
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Mail className="h-4 w-4" />
-            <span>{isLogin ? 'Email Login' : 'Register your email'}</span>
-          </button>
-        </div>
-
         {/* FORM MAIN CONTAINER */}
         <form onSubmit={handleSubmit} className="space-y-4">
           
-          {/* PHONE FIELD (Only if tab === 'phone') */}
-          {tab === 'phone' && (
-            <div className="space-y-1.5">
-              <label className="block text-[10px] font-bold text-[#E5A93B] uppercase tracking-widest">Phone number</label>
-              <div className="flex space-x-2">
-                {/* Prefix selector resembling screenshot */}
-                <div className="bg-[#181716] border border-[#3D2C08]/20 rounded-xl px-3.5 py-3 flex items-center space-x-1.5 text-xs font-extrabold text-[#E5A93B]">
-                  <span>+91</span>
-                  <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
-                </div>
-                <div className="relative flex-1">
-                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
-                    <Smartphone className="h-4 w-4" />
-                  </div>
-                  <input
-                    type="tel"
-                    required
-                    maxLength={10}
-                    placeholder="Please enter the phone number"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
-                    className="block w-full pl-10 pr-4 py-3 bg-[#181716] border border-[#3D2C08]/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-[#E5A93B] focus:border-[#E5A93B] text-xs text-white placeholder-slate-600 font-mono"
-                  />
-                </div>
+          {/* EMAIL FIELD */}
+          <div className="space-y-1.5">
+            <label className="block text-[10px] font-bold text-[#E5A93B] uppercase tracking-widest">Email Address</label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                <Mail className="h-4 w-4" />
               </div>
+              <input
+                type="email"
+                required
+                placeholder="Please enter the email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="block w-full pl-10 pr-4 py-3 bg-[#181716] border border-[#3D2C08]/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-[#E5A93B] focus:border-[#E5A93B] text-xs text-white placeholder-slate-600"
+              />
             </div>
-          )}
+          </div>
 
-          {/* EMAIL FIELD (Only if tab === 'email') */}
-          {tab === 'email' && (
-            <div className="space-y-1.5">
-              <label className="block text-[10px] font-bold text-[#E5A93B] uppercase tracking-widest">Email Address</label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
-                  <Mail className="h-4 w-4" />
-                </div>
-                <input
-                  type="email"
-                  required
-                  placeholder="Please enter the email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="block w-full pl-10 pr-4 py-3 bg-[#181716] border border-[#3D2C08]/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-[#E5A93B] focus:border-[#E5A93B] text-xs text-white placeholder-slate-600"
-                />
-              </div>
-            </div>
-          )}
-
-          {/* NICKNAME FIELD (Only if registering in Email mode) */}
-          {!isLogin && tab === 'email' && (
+          {/* NICKNAME FIELD (Only during registration) */}
+          {!isLogin && (
             <div className="space-y-1.5">
               <label className="block text-[10px] font-bold text-[#E5A93B] uppercase tracking-widest">Nickname</label>
               <input
@@ -378,10 +371,47 @@ export default function LoginSignup({ onLoginSuccess }: LoginSignupProps) {
                   type="text"
                   placeholder="Invite code"
                   value={inviteCode}
-                  onChange={(e) => setInviteCode(e.target.value.replace(/\D/g, ''))}
-                  className="block w-full pl-10 pr-4 py-3 bg-[#181716] border border-[#3D2C08]/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-[#E5A93B] focus:border-[#E5A93B] text-xs text-white placeholder-slate-600 font-mono"
+                  onChange={(e) => setInviteCode(e.target.value.trim())}
+                  className={`block w-full pl-10 pr-10 py-3 bg-[#181716] border rounded-xl focus:outline-none focus:ring-1 text-xs text-white placeholder-slate-600 font-mono ${
+                    inviteCode.trim() === ''
+                      ? 'border-[#3D2C08]/10 focus:ring-[#E5A93B] focus:border-[#E5A93B]'
+                      : inviteCodeStatus === 'valid'
+                      ? 'border-emerald-500 focus:ring-emerald-500 focus:border-emerald-500'
+                      : inviteCodeStatus === 'invalid'
+                      ? 'border-rose-500 focus:ring-rose-500 focus:border-rose-500'
+                      : 'border-amber-500 focus:ring-amber-500 focus:border-amber-500'
+                  }`}
                 />
+                {inviteCode.trim() !== '' && (
+                  <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none">
+                    {inviteCodeStatus === 'checking' && (
+                      <svg className="animate-spin h-3.5 w-3.5 text-amber-500" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                    )}
+                    {inviteCodeStatus === 'valid' && (
+                      <span className="text-emerald-500 font-bold text-xs">✓</span>
+                    )}
+                    {inviteCodeStatus === 'invalid' && (
+                      <span className="text-rose-500 font-bold text-xs">✗</span>
+                    )}
+                  </div>
+                )}
               </div>
+              {inviteCode.trim() !== '' && (
+                <div className="text-[10px] font-bold mt-1">
+                  {inviteCodeStatus === 'checking' && (
+                    <span className="text-amber-500">Checking code validity...</span>
+                  )}
+                  {inviteCodeStatus === 'valid' && (
+                    <span className="text-emerald-400">✓ Valid Refer Code (Invited by: {referredByUserNickname})</span>
+                  )}
+                  {inviteCodeStatus === 'invalid' && (
+                    <span className="text-rose-400">✗ Invalid Refer Code. Only valid code can register.</span>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -449,25 +479,6 @@ export default function LoginSignup({ onLoginSuccess }: LoginSignupProps) {
           </div>
 
         </form>
-
-        {/* BOTTOM ICON ACTIONS (Only for Login view, matches screenshot) */}
-        {isLogin && (
-          <div className="flex items-center justify-around mt-8 pt-6 border-t border-[#3D2C08]/10 text-slate-400">
-            <div className="flex flex-col items-center space-y-1.5 cursor-pointer hover:text-[#E5A93B] transition-colors">
-              <div className="bg-[#181716] border border-[#3D2C08]/20 p-3 rounded-full text-[#E5A93B]">
-                <HelpCircle className="h-5 w-5" />
-              </div>
-              <span className="text-[10px] font-extrabold uppercase tracking-widest">Forgot password</span>
-            </div>
-
-            <div className="flex flex-col items-center space-y-1.5 cursor-pointer hover:text-[#E5A93B] transition-colors">
-              <div className="bg-[#181716] border border-[#3D2C08]/20 p-3 rounded-full text-[#E5A93B]">
-                <Headphones className="h-5 w-5" />
-              </div>
-              <span className="text-[10px] font-extrabold uppercase tracking-widest">Customer Service</span>
-            </div>
-          </div>
-        )}
 
       </div>
 

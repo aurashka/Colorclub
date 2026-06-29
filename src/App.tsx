@@ -830,7 +830,7 @@ export default function App() {
       <div className="min-h-screen bg-[#070B14] flex items-center justify-center p-0 md:p-6 lg:p-8 font-sans selection:bg-amber-500/30">
         <div className="w-full h-screen md:h-[860px] md:max-w-[430px] md:rounded-[36px] md:border-[10px] md:border-slate-900 md:shadow-[0_25px_60px_-15px_rgba(0,0,0,0.8)] bg-[#0F172A] flex flex-col relative overflow-hidden">
           <div className="flex-1 overflow-y-auto overflow-x-hidden">
-            <LoginSignup onLoginSuccess={handleLoginSuccess} />
+            <LoginSignup onLoginSuccess={handleLoginSuccess} appConfig={appConfig} />
           </div>
         </div>
       </div>
