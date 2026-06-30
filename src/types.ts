@@ -11,6 +11,8 @@ export interface UserProfile {
   referredBy?: string;
   referredByUserKey?: string;
   hasDeposited?: boolean;
+  firstDepositAmount?: number;
+  firstDepositCommissionOn?: boolean;
   role?: 'admin' | 'user';
   isAdmin?: boolean;
   createdAt: number;
@@ -141,6 +143,9 @@ export interface AppConfig {
   supportEmail?: string;
   supportChatLink?: string;
   referralDomain?: string;
+  showPresets?: boolean;
+  showCustomInput?: boolean;
+  depositPresets?: number[];
 }
 
 export interface GiftCoupon {

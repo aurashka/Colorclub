@@ -60,6 +60,37 @@ export default function WalletSection({
   const [depError, setDepError] = useState('');
   const [depSuccess, setDepSuccess] = useState('');
 
+  // Get active deposit presets dynamically based on configuration
+  const getPresets = () => {
+    const configPresets = appConfig.depositPresets || [200, 300, 500, 1000, 5000, 50000];
+    return configPresets.map((amount) => {
+      const existing = PRESET_AMOUNTS.find(p => p.amount === amount);
+      return {
+        amount,
+        label: amount >= 1000 ? `${(amount/1000).toFixed(0)}K` : amount.toString(),
+        desc: existing?.desc || 'Instant',
+        hot: existing?.hot || false
+      };
+    });
+  };
+
+  // Synchronize default deposit amount with available configuration
+  useEffect(() => {
+    const presets = appConfig.depositPresets || [200, 300, 500, 1000, 5000, 50000];
+    const showPresets = appConfig.showPresets !== false;
+    const showCustomInput = appConfig.showCustomInput !== false;
+
+    if (showPresets && presets.length > 0) {
+      if (!depAmount || !presets.includes(Number(depAmount))) {
+        setDepAmount(presets[0].toString());
+      }
+    } else if (showCustomInput) {
+      if (!depAmount) {
+        setDepAmount(appConfig.minDeposit.toString());
+      }
+    }
+  }, [appConfig]);
+
   // Withdrawal States
   const [withAmount, setWithAmount] = useState<string>('');
   const [customFieldsData, setCustomFieldsData] = useState<{ [key: string]: string }>({});
@@ -381,7 +412,7 @@ export default function WalletSection({
         </div>
 
         <div className="mt-5 pt-4 border-t border-slate-800/60 flex justify-between items-center text-[11px] text-slate-400">
-          <span>UID: <span className="font-mono text-white">{user.uid.slice(0, 8)}</span></span>
+          <span>UID: <span className="font-mono text-white select-all">{user.uid}</span></span>
           <span className="text-[#d4af37] font-bold">VIP Account</span>
         </div>
       </div>
@@ -476,30 +507,55 @@ export default function WalletSection({
             )}
           </div>
 
-          {/* Amount Selection Grid */}
-          <div className="space-y-2">
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Select Recharge Amount</span>
-            <div className="grid grid-cols-3 gap-2">
-              {PRESET_AMOUNTS.map((p) => (
-                <button
-                  key={p.amount}
-                  type="button"
-                  onClick={() => setDepAmount(p.amount.toString())}
-                  className={`p-2.5 rounded-xl border relative font-mono cursor-pointer text-center transition-all ${
-                    depAmount === p.amount.toString()
-                      ? 'border-[#d4af37] bg-[#d4af37]/10 text-[#d4af37] font-black shadow-lg shadow-amber-950/20'
-                      : 'border-slate-800 bg-slate-900/30 text-slate-300 hover:bg-slate-850'
-                  }`}
-                >
-                  <div className="text-xs">{appConfig.currencySymbol}{p.amount.toLocaleString('en-IN')}</div>
-                  <div className="text-[7px] text-slate-500 mt-0.5">{p.desc}</div>
-                  {p.hot && (
-                    <span className="absolute -top-1.5 -right-1 text-[7px] px-1 font-sans uppercase font-black bg-[#d4af37] text-slate-950 rounded tracking-wider scale-90 shadow-md">HOT</span>
-                  )}
-                </button>
-              ))}
+          {/* Recharge Amount input field (moved above Select presets per request) */}
+          {appConfig.showCustomInput !== false ? (
+            <div className="space-y-2">
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Recharge Amount ({appConfig.currencySymbol})</label>
+              <input
+                type="number"
+                min={appConfig.minDeposit}
+                required
+                placeholder={`Minimum ${appConfig.currencySymbol}${appConfig.minDeposit}`}
+                value={depAmount}
+                onChange={(e) => setDepAmount(e.target.value)}
+                className="block w-full px-4 py-3 bg-slate-950 border border-slate-900 rounded-xl focus:outline-none focus:ring-1 focus:ring-[#d4af37]/50 text-white text-base font-mono font-bold"
+              />
             </div>
-          </div>
+          ) : (
+            <div className="bg-slate-900/40 p-3.5 rounded-xl border border-slate-900/60 flex justify-between items-center">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Selected Amount</span>
+              <span className="text-white font-mono font-bold text-sm bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-800">
+                {appConfig.currencySymbol}{parseFloat(depAmount) ? parseFloat(depAmount).toLocaleString('en-IN') : '0'}
+              </span>
+            </div>
+          )}
+
+          {/* Amount Selection Grid */}
+          {appConfig.showPresets !== false && (
+            <div className="space-y-2">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Select Recharge Amount</span>
+              <div className="grid grid-cols-3 gap-2">
+                {getPresets().map((p) => (
+                  <button
+                    key={p.amount}
+                    type="button"
+                    onClick={() => setDepAmount(p.amount.toString())}
+                    className={`p-2.5 rounded-xl border relative font-mono cursor-pointer text-center transition-all ${
+                      depAmount === p.amount.toString()
+                        ? 'border-[#d4af37] bg-[#d4af37]/10 text-[#d4af37] font-black shadow-lg shadow-amber-950/20'
+                        : 'border-slate-800 bg-slate-900/30 text-slate-300 hover:bg-slate-850'
+                    }`}
+                  >
+                    <div className="text-xs">{appConfig.currencySymbol}{p.amount.toLocaleString('en-IN')}</div>
+                    <div className="text-[7px] text-slate-500 mt-0.5">{p.desc}</div>
+                    {p.hot && (
+                      <span className="absolute -top-1.5 -right-1 text-[7px] px-1 font-sans uppercase font-black bg-[#d4af37] text-slate-950 rounded tracking-wider scale-90 shadow-md">HOT</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Dynamic Instructions block */}
           {selectedChannel && (
@@ -665,20 +721,14 @@ export default function WalletSection({
           )}
 
           {/* Form Fields & Submit Button */}
-          <div className="space-y-4">
-            <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Recharge Amount ({appConfig.currencySymbol})</label>
-              <input
-                type="number"
-                min={appConfig.minDeposit}
-                required
-                placeholder={`Minimum ${appConfig.currencySymbol}${appConfig.minDeposit}`}
-                value={depAmount}
-                onChange={(e) => setDepAmount(e.target.value)}
-                className="block w-full px-4 py-3 bg-slate-950 border border-slate-900 rounded-xl focus:outline-none focus:ring-1 focus:ring-[#d4af37]/50 text-white text-base font-mono font-bold"
-              />
+          {appConfig.showPresets === false && appConfig.showCustomInput === false && (
+            <div className="bg-amber-500/10 border border-amber-500/30 text-amber-300 p-3.5 rounded-xl text-xs flex items-center space-x-2">
+              <AlertCircle className="h-4 w-4 text-amber-400 shrink-0" />
+              <span>Deposits are temporarily disabled by the administrator. Please contact support.</span>
             </div>
+          )}
 
+          <div className="space-y-4">
             {selectedChannel && (selectedChannel.requiredFields || []).map((f) => (
               <div key={f.id}>
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
@@ -706,7 +756,7 @@ export default function WalletSection({
 
             <button
               type="submit"
-              disabled={depLoading || !selectedChannel}
+              disabled={depLoading || !selectedChannel || (appConfig.showPresets === false && appConfig.showCustomInput === false)}
               className="w-full bg-[#d4af37] text-slate-950 hover:bg-[#f3ca4d] hover:scale-[1.01] active:scale-[0.99] font-black py-4 rounded-xl text-xs uppercase tracking-wider flex items-center justify-center space-x-2 transition-all disabled:opacity-30 disabled:pointer-events-none cursor-pointer shadow-lg shadow-amber-950/40"
             >
               {depLoading ? 'Submitting claims...' : 'Submit Deposit Notification'}

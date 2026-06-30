@@ -522,34 +522,53 @@ export default function ProfileSheets({
                         No team members registered yet. Copy and share your link above to build your active income team!
                       </div>
                     ) : (
-                      referredUsers.map((refUser, idx) => {
-                        const totalUserCommission = commissionLogs
-                          .filter(log => log.referredUserEmail?.toLowerCase() === refUser.email?.toLowerCase())
-                          .reduce((sum, log) => sum + log.amount, 0);
+                      <div className="space-y-2">
+                        {/* Table Header */}
+                        <div className="grid grid-cols-3 gap-2 px-3 py-1.5 text-[9px] font-black uppercase text-slate-500 tracking-wider border-b border-slate-900/60">
+                          <div>Name / Date</div>
+                          <div className="text-center">First Money</div>
+                          <div className="text-right">Play Comm.</div>
+                        </div>
 
-                        return (
-                          <div key={refUser.uid || idx} className="bg-[#181716] p-3 rounded-xl border border-slate-900/60 flex items-center justify-between">
-                            <div className="space-y-1">
-                              <span className="text-xs text-white font-extrabold block">
-                                {refUser.nickname || 'Gamer'}
-                              </span>
-                              <span className="text-[9px] text-slate-400 font-mono block">
-                                {refUser.email}
-                              </span>
-                              <span className="text-[8px] text-slate-500 block font-mono">
-                                Registered: {new Date(refUser.createdAt || Date.now()).toLocaleDateString('en-IN', { dateStyle: 'short' })}
-                              </span>
+                        {referredUsers.map((refUser, idx) => {
+                          const firstDepositAmount = refUser.firstDepositAmount || 0;
+                          const firstDepositOn = refUser.firstDepositCommissionOn || false;
+                          const playCommission = commissionLogs
+                            .filter(log => log.referredUserEmail?.toLowerCase() === refUser.email?.toLowerCase() && log.type === 'bet')
+                            .reduce((sum, log) => sum + log.amount, 0);
+
+                          return (
+                            <div key={refUser.uid || idx} className="bg-[#181716] p-3 rounded-xl border border-slate-900/60 grid grid-cols-3 gap-2 items-center">
+                              {/* Name & Date Column */}
+                              <div className="space-y-0.5 min-w-0">
+                                <span className="text-xs text-white font-extrabold block truncate">
+                                  {refUser.nickname || 'Gamer'}
+                                </span>
+                                <span className="text-[8px] text-slate-500 block font-mono">
+                                  {new Date(refUser.createdAt || Date.now()).toLocaleDateString('en-IN', { dateStyle: 'short' })}
+                                </span>
+                              </div>
+                              
+                              {/* First Money (On/Off Status) Column */}
+                              <div className="text-center space-y-0.5">
+                                <span className="text-xs font-mono font-bold text-slate-200 block">
+                                  {appConfig.currencySymbol || '₹'}{firstDepositAmount.toLocaleString('en-IN')}
+                                </span>
+                                <span className={`inline-block text-[7px] font-black px-1 rounded uppercase scale-90 ${firstDepositOn ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/10' : 'bg-slate-800 text-slate-400'}`}>
+                                  {firstDepositOn ? 'ON' : 'OFF'}
+                                </span>
+                              </div>
+                              
+                              {/* Play Commission Column */}
+                              <div className="text-right">
+                                <span className="text-xs font-mono font-black text-emerald-400 block">
+                                  +{appConfig.currencySymbol || '₹'}{playCommission.toFixed(2)}
+                                </span>
+                              </div>
                             </div>
-                            
-                            <div className="text-right">
-                              <span className="text-[8px] font-bold text-slate-500 uppercase block">Earned</span>
-                              <span className="text-xs font-mono font-black text-emerald-400 block">
-                                +{appConfig.currencySymbol || '₹'}{totalUserCommission.toFixed(2)}
-                              </span>
-                            </div>
-                          </div>
-                        );
-                      })
+                          );
+                        })}
+                      </div>
                     )}
                   </div>
                 )}

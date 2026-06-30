@@ -111,6 +111,9 @@ export default function AdminPanel({
   const [cfgSupportEmail, setCfgSupportEmail] = useState(String(appConfig.supportEmail || 'support@lottery7.vip'));
   const [cfgSupportChatLink, setCfgSupportChatLink] = useState(String(appConfig.supportChatLink || ''));
   const [cfgReferralDomain, setCfgReferralDomain] = useState(String(appConfig.referralDomain || ''));
+  const [cfgShowPresets, setCfgShowPresets] = useState<boolean>(appConfig.showPresets !== false);
+  const [cfgShowCustomInput, setCfgShowCustomInput] = useState<boolean>(appConfig.showCustomInput !== false);
+  const [cfgDepositPresets, setCfgDepositPresets] = useState<string>((appConfig.depositPresets || [200, 300, 500, 1000, 5000, 50000]).join(','));
   const [interestLoading, setInterestLoading] = useState(false);
   const [cfgLoading, setCfgLoading] = useState(false);
   const [cfgSuccess, setCfgSuccess] = useState('');
@@ -146,6 +149,7 @@ export default function AdminPanel({
   // User tab specific filters and drill-down state
   const [userFilter, setUserFilter] = useState<'all' | 'online' | 'offline' | 'money' | 'admin'>('all');
   const [selectedUserDetail, setSelectedUserDetail] = useState<UserProfile | null>(null);
+  const [tempFirstDepAmount, setTempFirstDepAmount] = useState<string>('');
 
   // Fetch Coupons
   React.useEffect(() => {
@@ -200,6 +204,9 @@ export default function AdminPanel({
     setCfgSupportEmail(String(appConfig.supportEmail || 'support@lottery7.vip'));
     setCfgSupportChatLink(String(appConfig.supportChatLink || ''));
     setCfgReferralDomain(String(appConfig.referralDomain || ''));
+    setCfgShowPresets(appConfig.showPresets !== false);
+    setCfgShowCustomInput(appConfig.showCustomInput !== false);
+    setCfgDepositPresets((appConfig.depositPresets || [200, 300, 500, 1000, 5000, 50000]).join(','));
   }, [appConfig]);
 
   const handleAppConfigSubmit = async (e: React.FormEvent) => {
@@ -209,6 +216,11 @@ export default function AdminPanel({
     setCfgLoading(true);
 
     try {
+      const parsedPresets = cfgDepositPresets
+        .split(',')
+        .map((p) => parseInt(p.trim(), 10))
+        .filter((p) => !isNaN(p) && p > 0);
+
       await onUpdateAppConfig({
         appName: String(cfgAppName || '').trim(),
         minDeposit: Number(cfgMinDep),
@@ -222,9 +234,12 @@ export default function AdminPanel({
         interestRate: Number(cfgInterestRate),
         supportEmail: String(cfgSupportEmail || '').trim(),
         supportChatLink: String(cfgSupportChatLink || '').trim(),
-        referralDomain: String(cfgReferralDomain || '').trim()
+        referralDomain: String(cfgReferralDomain || '').trim(),
+        showPresets: cfgShowPresets,
+        showCustomInput: cfgShowCustomInput,
+        depositPresets: parsedPresets
       });
-      setCfgSuccess('Global App Configuration and Currency settings updated successfully!');
+      setCfgSuccess('Global App Configuration and Deposit settings updated successfully!');
     } catch (err: any) {
       setCfgError('Failed to update: ' + err.message);
     } finally {
@@ -1538,6 +1553,68 @@ export default function AdminPanel({
                             {appConfig.currencySymbol || '$'}{(freshUser.interestEarned || 0).toFixed(4)}
                           </span>
                         </div>
+
+                        {/* First Deposit Commission Setup (from user request) */}
+                        <div className="border-t border-slate-900/60 pt-3 mt-3 space-y-3">
+                          <span className="text-[10px] font-black text-[#d4af37] uppercase tracking-wider block">First Deposit & Commission Setup</span>
+                          
+                          <div className="flex items-center justify-between pb-1">
+                            <span className="text-slate-500 uppercase text-[9px] font-black tracking-wider">Commission Paid/On</span>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                const currentVal = freshUser.firstDepositCommissionOn === true;
+                                try {
+                                  await update(ref(db, `users/${uKey}`), {
+                                    firstDepositCommissionOn: !currentVal,
+                                    hasDeposited: !currentVal
+                                  });
+                                } catch (err: any) {
+                                  alert('Failed to update commission status: ' + err.message);
+                                }
+                              }}
+                              className={`px-2.5 py-1 text-[8px] font-black uppercase rounded transition-all cursor-pointer ${
+                                freshUser.firstDepositCommissionOn
+                                  ? 'bg-emerald-500 text-slate-950 hover:bg-emerald-400'
+                                  : 'bg-slate-800 text-slate-400 hover:bg-slate-750'
+                              }`}
+                            >
+                              {freshUser.firstDepositCommissionOn ? 'ON (Paid)' : 'OFF (Pending)'}
+                            </button>
+                          </div>
+
+                          <div className="flex items-center justify-between gap-2 pb-1">
+                            <span className="text-slate-500 uppercase text-[9px] font-black tracking-wider">First Deposit Amount</span>
+                            <div className="flex items-center space-x-1.5 shrink-0">
+                              <span className="text-[10px] text-slate-500 font-bold font-mono">{appConfig.currencySymbol || '₹'}</span>
+                              <input
+                                type="number"
+                                value={tempFirstDepAmount !== '' ? tempFirstDepAmount : (freshUser.firstDepositAmount !== undefined ? freshUser.firstDepositAmount : '')}
+                                onChange={(e) => setTempFirstDepAmount(e.target.value)}
+                                placeholder="0"
+                                className="w-20 px-2 py-1 bg-slate-950 border border-slate-800 rounded text-[10px] font-mono text-white text-right focus:outline-none"
+                              />
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  const amt = parseFloat(tempFirstDepAmount) || 0;
+                                  try {
+                                    await update(ref(db, `users/${uKey}`), {
+                                      firstDepositAmount: amt
+                                    });
+                                    alert('First deposit amount updated to ' + (appConfig.currencySymbol || '₹') + amt + ' successfully!');
+                                    setTempFirstDepAmount('');
+                                  } catch (err: any) {
+                                    alert('Failed to update first deposit amount: ' + err.message);
+                                  }
+                                }}
+                                className="px-2 py-1 bg-[#d4af37] text-slate-950 font-bold text-[8px] uppercase rounded hover:bg-[#eec547] cursor-pointer"
+                              >
+                                Set
+                              </button>
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -2841,6 +2918,74 @@ export default function AdminPanel({
                     />
                   </div>
                 </div>
+              </div>
+
+              {/* Deposit Custom Options & Presets Group */}
+              <div className="space-y-4 bg-slate-950/40 p-4 border border-slate-900 rounded-xl md:col-span-2">
+                <span className="text-[10px] font-black uppercase text-[#d4af37] block border-b border-slate-900 pb-1.5 tracking-wider">Deposit UI Customization (Presets & Custom Amounts)</span>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Show Presets Toggle */}
+                  <div className="flex items-center justify-between p-3 bg-slate-950/60 border border-slate-900 rounded-xl">
+                    <div className="space-y-0.5">
+                      <span className="text-xs font-bold text-white block">Pre-selected Amount Buttons</span>
+                      <span className="text-[9px] text-slate-500 block">Show preset quick-select buttons in Deposit screen</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setCfgShowPresets(!cfgShowPresets)}
+                      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                        cfgShowPresets ? 'bg-[#d4af37]' : 'bg-slate-800'
+                      }`}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-slate-950 shadow ring-0 transition duration-200 ease-in-out ${
+                          cfgShowPresets ? 'translate-x-4' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  {/* Show Custom Input Toggle */}
+                  <div className="flex items-center justify-between p-3 bg-slate-950/60 border border-slate-900 rounded-xl">
+                    <div className="space-y-0.5">
+                      <span className="text-xs font-bold text-white block">Custom Amount Input Field</span>
+                      <span className="text-[9px] text-slate-500 block">Allow users to enter custom deposit amounts manually</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setCfgShowCustomInput(!cfgShowCustomInput)}
+                      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                        cfgShowCustomInput ? 'bg-[#d4af37]' : 'bg-slate-800'
+                      }`}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-slate-950 shadow ring-0 transition duration-200 ease-in-out ${
+                          cfgShowCustomInput ? 'translate-x-4' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
+                  </div>
+                </div>
+
+                {cfgShowPresets && (
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                      Edit Pre-selected Deposit Preset Amounts (Comma Separated)
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={cfgDepositPresets}
+                      onChange={(e) => setCfgDepositPresets(e.target.value)}
+                      className="w-full px-3 py-2.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white focus:ring-1 focus:ring-[#d4af37]/50 focus:outline-none font-mono"
+                      placeholder="e.g. 200,300,500,1000,5000,50000"
+                    />
+                    <span className="text-[9px] text-slate-500 mt-1.5 block">
+                      Define the quick-select amounts separated by commas. Invalid numbers or spaces will be automatically filtered out when saving.
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* Support Links Group */}

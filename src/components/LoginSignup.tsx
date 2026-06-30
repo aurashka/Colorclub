@@ -211,7 +211,9 @@ export default function LoginSignup({ onLoginSuccess, appConfig, onBack }: Login
           inviteCode: ownInviteCode,
           role: isDefaultAdmin ? 'admin' : 'user',
           isAdmin: isDefaultAdmin,
-          createdAt: Date.now()
+          createdAt: Date.now(),
+          firstDepositAmount: 0,
+          firstDepositCommissionOn: false
         };
 
         if (inviteCode.trim() && inviteCodeStatus === 'valid') {

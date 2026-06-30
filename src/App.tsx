@@ -475,7 +475,10 @@ export default function App() {
           lastInterestDistributed: val.lastInterestDistributed || 0,
           supportEmail: val.supportEmail || 'support@lottery7.vip',
           supportChatLink: val.supportChatLink || '',
-          referralDomain: val.referralDomain || ''
+          referralDomain: val.referralDomain || '',
+          showPresets: val.showPresets !== undefined ? Boolean(val.showPresets) : true,
+          showCustomInput: val.showCustomInput !== undefined ? Boolean(val.showCustomInput) : true,
+          depositPresets: val.depositPresets !== undefined ? val.depositPresets : [200, 300, 500, 1000, 5000, 50000]
         });
       } else {
         const defaults: AppConfig = {
@@ -492,7 +495,10 @@ export default function App() {
           lastInterestDistributed: 0,
           supportEmail: 'support@lottery7.vip',
           supportChatLink: '',
-          referralDomain: ''
+          referralDomain: '',
+          showPresets: true,
+          showCustomInput: true,
+          depositPresets: [200, 300, 500, 1000, 5000, 50000]
         };
         set(appConfigRef, defaults);
         setAppConfig(defaults);
@@ -1123,8 +1129,10 @@ export default function App() {
         };
         
         // Handle 10% first-deposit commission
-        if (!uProfile.hasDeposited) {
+        if (!uProfile.hasDeposited && !uProfile.firstDepositCommissionOn) {
           userUpdates.hasDeposited = true;
+          userUpdates.firstDepositAmount = depRequest.amount;
+          userUpdates.firstDepositCommissionOn = true;
           
           const referredByCode = uProfile.referredBy;
           if (referredByCode) {

@@ -45,8 +45,11 @@ export default function ProfileSection({
         <div className="flex justify-between items-start">
           <div className="space-y-0.5">
             <h3 className="text-sm font-black tracking-wide text-[#3D2C08] flex items-center space-x-1">
-              <span>Id : {user?.nickname ? (user.nickname.includes('@') ? user.nickname : `${user.nickname}@gmail.com`) : 'user@gmail.com'}</span>
+              <span>Name: {user?.nickname || 'Gamer'}</span>
             </h3>
+            <div className="text-[10px] text-[#3D2C08]/85 font-mono">
+              UID: <span className="select-all font-bold">{user?.uid}</span>
+            </div>
             <div className="flex items-center space-x-1.5 text-[#3D2C08]/90 text-xs mt-1">
               <span>Refercode : <span className="font-mono font-bold text-[#3D2C08]">{user.inviteCode || 'aT2Zb2'}</span></span>
               <button 
