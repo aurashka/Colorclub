@@ -7,6 +7,7 @@ import { Mail, Lock, Eye, EyeOff, Award, ArrowLeft, ChevronDown } from 'lucide-r
 interface LoginSignupProps {
   onLoginSuccess: (user: UserProfile) => void;
   appConfig?: AppConfig;
+  onBack?: () => void;
 }
 
 export const getEmailKey = (email: string): string => {
@@ -15,7 +16,7 @@ export const getEmailKey = (email: string): string => {
     .replace(/\./g, '_');
 };
 
-export default function LoginSignup({ onLoginSuccess, appConfig }: LoginSignupProps) {
+export default function LoginSignup({ onLoginSuccess, appConfig, onBack }: LoginSignupProps) {
   const [isLogin, setIsLogin] = useState(true);
   
   // Form fields
@@ -23,7 +24,7 @@ export default function LoginSignup({ onLoginSuccess, appConfig }: LoginSignupPr
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [nickname, setNickname] = useState('');
-  const [inviteCode, setInviteCode] = useState('5853117646974'); // prefilled default
+  const [inviteCode, setInviteCode] = useState(''); // prefilled default is empty
   const [rememberMe, setRememberMe] = useState(true);
   const [agreeTerms, setAgreeTerms] = useState(true);
 
@@ -206,14 +207,19 @@ export default function LoginSignup({ onLoginSuccess, appConfig }: LoginSignupPr
           phone: '',
           password,
           nickname: finalNickname,
-          wallet: 20, // $20 welcome signup bonus
+          wallet: 0, // $0 welcome signup bonus
           inviteCode: ownInviteCode,
-          referredBy: (inviteCode.trim() && inviteCodeStatus === 'valid') ? inviteCode.trim().toUpperCase() : undefined,
-          referredByUserKey: (inviteCode.trim() && inviteCodeStatus === 'valid') ? referredByUserKey : undefined,
           role: isDefaultAdmin ? 'admin' : 'user',
           isAdmin: isDefaultAdmin,
           createdAt: Date.now()
         };
+
+        if (inviteCode.trim() && inviteCodeStatus === 'valid') {
+          newUser.referredBy = inviteCode.trim().toUpperCase();
+          if (referredByUserKey) {
+            newUser.referredByUserKey = referredByUserKey;
+          }
+        }
 
         await set(userRef, newUser);
         onLoginSuccess(newUser);
@@ -236,6 +242,8 @@ export default function LoginSignup({ onLoginSuccess, appConfig }: LoginSignupPr
             if (!isLogin) {
               setIsLogin(true);
               setError('');
+            } else if (onBack) {
+              onBack();
             }
           }}
           className="p-1 rounded-lg text-slate-400 hover:text-white transition-all cursor-pointer"
@@ -251,16 +259,8 @@ export default function LoginSignup({ onLoginSuccess, appConfig }: LoginSignupPr
           <span className="font-extrabold text-xs tracking-wider text-[#E5A93B]">{appName.toUpperCase()}</span>
         </div>
 
-        {/* LANGUAGE SELECTOR */}
-        <div className="flex items-center space-x-1 cursor-pointer bg-[#242220] border border-[#3D2C08]/30 rounded-full px-2.5 py-1">
-          <div className="w-4 h-3 bg-blue-900 rounded-sm relative overflow-hidden flex items-center justify-center text-[6px] font-black text-white shrink-0">
-            <span className="absolute left-0 top-0 bg-red-600 w-2.5 h-1.5"></span>
-            <span className="absolute right-0 bottom-0 bg-white w-2.5 h-1.5"></span>
-            ★
-          </div>
-          <span className="text-[9px] font-black text-slate-300">EN</span>
-          <ChevronDown className="h-2.5 w-2.5 text-slate-400" />
-        </div>
+        {/* EMPTY SPACE TO BALANCE CENTERED LOGO */}
+        <div className="w-7 h-7" />
       </div>
 
       {/* BODY WRAPPER */}

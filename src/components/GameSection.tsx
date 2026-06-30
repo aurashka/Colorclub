@@ -23,6 +23,8 @@ interface GameSectionProps {
   onNavigateToWallet: (subTab: 'deposit' | 'withdrawal' | 'history') => void;
   onLoginPrompt: () => void;
   appConfig: AppConfig;
+  selectedSelection: string | null;
+  setSelectedSelection: (selection: string | null) => void;
 }
 
 export default function GameSection({
@@ -40,8 +42,9 @@ export default function GameSection({
   onNavigateToWallet,
   onLoginPrompt,
   appConfig,
+  selectedSelection,
+  setSelectedSelection,
 }: GameSectionProps) {
-  const [selectedSelection, setSelectedSelection] = useState<string | null>(null);
   const [multiplier, setMultiplier] = useState<number>(1);
   const [baseAmount, setBaseAmount] = useState<number>(10);
   const [loading, setLoading] = useState(false);

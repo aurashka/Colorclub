@@ -31,6 +31,8 @@ export default function App() {
   const [roomId, setRoomId] = useState<RoomType>('1m');
   const [activeProfileSheet, setActiveProfileSheet] = useState<string | null>(null);
   const [userUnreadSupportCount, setUserUnreadSupportCount] = useState(0);
+  const [selectedSelection, setSelectedSelection] = useState<string | null>(null);
+  const isPoppingRef = React.useRef(false);
   
   const [appConfig, setAppConfig] = useState<AppConfig>({
     appName: 'L7 LOTTERY7',
@@ -179,8 +181,23 @@ export default function App() {
     }
   }, [appConfig?.appName]);
 
-  // 1. Restore login session on mount
+  // 1. Restore login session on mount & handle referral routing
   useEffect(() => {
+    const handleReferralRouting = () => {
+      const searchParams = new URLSearchParams(window.location.search);
+      let refCode = searchParams.get('ref') || searchParams.get('inviteCode') || searchParams.get('code');
+      if (!refCode && window.location.hash) {
+        const hashQuery = window.location.hash.split('?')[1];
+        if (hashQuery) {
+          const hashParams = new URLSearchParams(hashQuery);
+          refCode = hashParams.get('ref') || hashParams.get('inviteCode') || hashParams.get('code');
+        }
+      }
+      if (refCode) {
+        setActiveTab('login');
+      }
+    };
+
     const savedKey = localStorage.getItem('prism_user_key') || localStorage.getItem('prism_user_phone');
     if (savedKey) {
       const userRef = ref(db, `users/${savedKey}`);
@@ -190,10 +207,81 @@ export default function App() {
         } else {
           localStorage.removeItem('prism_user_key');
           localStorage.removeItem('prism_user_phone');
+          handleReferralRouting();
         }
+      }).catch(() => {
+        handleReferralRouting();
       });
+    } else {
+      handleReferralRouting();
     }
   }, []);
+
+  // Back History synchronization (Request 3)
+  useEffect(() => {
+    // Define initial state on mount if not already present
+    if (!window.history.state) {
+      window.history.replaceState({
+        activeTab: 'game',
+        activeSubView: null,
+        activeProfileSheet: null,
+        selectedSelection: null,
+        showLoginPrompt: false
+      }, '');
+    }
+
+    // Popstate listener to handle browser back button
+    const handlePopState = (event: PopStateEvent) => {
+      const state = event.state;
+      if (state) {
+        isPoppingRef.current = true;
+        if (state.activeTab !== undefined) setActiveTab(state.activeTab);
+        if (state.activeSubView !== undefined) setActiveSubView(state.activeSubView);
+        if (state.activeProfileSheet !== undefined) setActiveProfileSheet(state.activeProfileSheet);
+        if (state.selectedSelection !== undefined) setSelectedSelection(state.selectedSelection);
+        if (state.showLoginPrompt !== undefined) setShowLoginPrompt(state.showLoginPrompt);
+      } else {
+        // Revert to default home/game view
+        isPoppingRef.current = true;
+        setActiveTab('game');
+        setActiveSubView(null);
+        setActiveProfileSheet(null);
+        setSelectedSelection(null);
+        setShowLoginPrompt(false);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, []);
+
+  // Monitor state changes and push history
+  useEffect(() => {
+    if (isPoppingRef.current) {
+      isPoppingRef.current = false;
+      return;
+    }
+
+    const currentState = window.history.state;
+    const stateDiffers = !currentState || 
+      currentState.activeTab !== activeTab ||
+      currentState.activeSubView !== activeSubView ||
+      currentState.activeProfileSheet !== activeProfileSheet ||
+      currentState.selectedSelection !== selectedSelection ||
+      currentState.showLoginPrompt !== showLoginPrompt;
+
+    if (stateDiffers) {
+      window.history.pushState({
+        activeTab,
+        activeSubView,
+        activeProfileSheet,
+        selectedSelection,
+        showLoginPrompt
+      }, '');
+    }
+  }, [activeTab, activeSubView, activeProfileSheet, selectedSelection, showLoginPrompt]);
 
   // 2. Real-time subscriber for logged-in User profile & wallet balance
   useEffect(() => {
@@ -1209,7 +1297,7 @@ export default function App() {
               {/* Back Header */}
               <div className="flex items-center space-x-2 bg-[#0B0F17] p-4 sticky top-0 border-b border-slate-900/80 z-30">
                 <button 
-                  onClick={() => setActiveSubView(null)}
+                  onClick={() => window.history.back()}
                   className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-900 transition-colors cursor-pointer"
                 >
                   <ChevronLeft className="h-5 w-5" />
@@ -1240,7 +1328,7 @@ export default function App() {
               {/* Back Header */}
               <div className="flex items-center space-x-2 bg-[#0B0F17] p-4 sticky top-0 border-b border-slate-900/80 z-30">
                 <button 
-                  onClick={() => setActiveSubView(null)}
+                  onClick={() => window.history.back()}
                   className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-900 transition-colors cursor-pointer"
                 >
                   <ChevronLeft className="h-5 w-5" />
@@ -1285,7 +1373,7 @@ export default function App() {
               <UserSupportChat
                 user={user}
                 appConfig={appConfig}
-                onBack={() => setActiveSubView(null)}
+                onBack={() => window.history.back()}
               />
             </div>
           )}
@@ -1321,6 +1409,8 @@ export default function App() {
                   }}
                   onLoginPrompt={() => setShowLoginPrompt(true)}
                   appConfig={appConfig}
+                  selectedSelection={selectedSelection}
+                  setSelectedSelection={setSelectedSelection}
                 />
               )}
               {activeTab === 'profile' && user && (
@@ -1345,21 +1435,12 @@ export default function App() {
                 />
               )}
               {activeTab === 'login' && (
-                <div className="w-full flex flex-col bg-[#0F172A] relative min-h-full">
-                  <div className="flex items-center space-x-2 bg-[#0B0F17] p-4 border-b border-slate-900/80 sticky top-0 z-30">
-                    <button 
-                      onClick={() => setActiveTab('game')}
-                      className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-900 transition-colors cursor-pointer animate-in fade-in"
-                    >
-                      <ChevronLeft className="h-5 w-5" />
-                    </button>
-                    <span className="text-xs font-black uppercase text-amber-400 tracking-wider">
-                      Login / Register
-                    </span>
-                  </div>
-                  <div className="p-1">
-                    <LoginSignup onLoginSuccess={handleLoginSuccess} appConfig={appConfig} />
-                  </div>
+                <div className="w-full flex flex-col bg-[#0B0A09] relative min-h-full">
+                  <LoginSignup 
+                    onLoginSuccess={handleLoginSuccess} 
+                    appConfig={appConfig} 
+                    onBack={() => setActiveTab('game')} 
+                  />
                 </div>
               )}
             </>
@@ -1443,12 +1524,14 @@ export default function App() {
         {user && activeProfileSheet && (
           <ProfileSheets
             activeSheet={activeProfileSheet}
-            onClose={() => setActiveProfileSheet(null)}
+            onClose={() => window.history.back()}
             user={user}
             appConfig={appConfig}
             onNavigateToWallet={(subTab) => {
-              setActiveProfileSheet(null);
-              setActiveSubView(subTab === 'withdrawal' ? 'withdrawal' : 'deposit');
+              window.history.back(); // Pop active profile sheet
+              setTimeout(() => {
+                setActiveSubView(subTab === 'withdrawal' ? 'withdrawal' : 'deposit');
+              }, 100);
             }}
           />
         )}
@@ -1474,16 +1557,18 @@ export default function App() {
               <div className="flex flex-col space-y-2">
                 <button
                   onClick={() => {
-                    setShowLoginPrompt(false);
-                    setActiveSubView(null);
-                    setActiveTab('login');
+                    window.history.back(); // Pop login prompt
+                    setTimeout(() => {
+                      setActiveSubView(null);
+                      setActiveTab('login');
+                    }, 100);
                   }}
                   className="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-black py-2.5 rounded-xl transition-all uppercase tracking-wider text-[10px] shadow-md shadow-amber-500/20 active:scale-98 cursor-pointer"
                 >
                   Login / Register
                 </button>
                 <button
-                  onClick={() => setShowLoginPrompt(false)}
+                  onClick={() => window.history.back()}
                   className="w-full bg-slate-900 hover:bg-slate-800 text-slate-400 font-bold py-2 rounded-xl transition-all text-[10px] border border-slate-800/60 cursor-pointer"
                 >
                   Cancel & Explore
