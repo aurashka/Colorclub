@@ -3,6 +3,8 @@ import { db } from './firebase';
 import { ref, onValue, set, get, update, remove } from 'firebase/database';
 import { RoomType, UserProfile, GamePeriod, BidRecord, DepositRequest, WithdrawalRequest, DepositChannel, DepositChannelField, WithdrawalField, AppConfig } from './types';
 import { getPeriodDetails, generatePeriodResult, calculateBidResult, getRecentPeriodIds, getDeterministicResult, getDeterministicNumber } from './utils/gameUtils';
+import { WinPopupModal } from './components/WinPopupModal';
+import { playWinSound, playLossSound } from './utils/audioUtils';
 
 // Components
 import LoginSignup from './components/LoginSignup';
@@ -48,6 +50,19 @@ export default function App() {
   const [deposits, setDeposits] = useState<DepositRequest[]>([]);
   const [withdrawals, setWithdrawals] = useState<WithdrawalRequest[]>([]);
   const [activeBids, setActiveBids] = useState<BidRecord[]>([]);
+  
+  // States and refs for Win/Loss Sound and Win Popup
+  const [winPopupDetails, setWinPopupDetails] = useState<{
+    periodId: string;
+    roomId: string;
+    totalBidsCount: number;
+    totalWinAmount: number;
+    resultText: string;
+    gameTypeLabel: string;
+  } | null>(null);
+
+  const processedBidsRef = useRef<Set<string>>(new Set());
+  const initialBidsProcessedRef = useRef(false);
   
   // Game state controls
   const [periodDetails, setPeriodDetails] = useState(getPeriodDetails('1m'));
@@ -461,6 +476,91 @@ export default function App() {
     return () => unsubscribeBids();
   }, []);
 
+  // Synchronize previously completed bids to avoid popups on page load/login
+  useEffect(() => {
+    if (!user) {
+      processedBidsRef.current.clear();
+      initialBidsProcessedRef.current = false;
+      return;
+    }
+
+    if (activeBids.length > 0 && !initialBidsProcessedRef.current) {
+      activeBids.forEach((bid) => {
+        if (bid.userId === user.uid && bid.status !== 'pending') {
+          processedBidsRef.current.add(bid.bidId);
+        }
+      });
+      initialBidsProcessedRef.current = true;
+    }
+  }, [activeBids, user]);
+
+  // Monitor bids to detect and announce game resolutions (Win / Loss)
+  useEffect(() => {
+    if (!user || !initialBidsProcessedRef.current) return;
+
+    // Filter for any of current user's bids that have just been resolved (won or lost)
+    const justResolved = activeBids.filter((bid) => {
+      return (
+        bid.userId === user.uid &&
+        bid.status !== 'pending' &&
+        !processedBidsRef.current.has(bid.bidId)
+      );
+    });
+
+    if (justResolved.length === 0) return;
+
+    // Add them immediately to the processed set to avoid duplicate execution
+    justResolved.forEach((b) => processedBidsRef.current.add(b.bidId));
+
+    // Group the newly resolved bids by periodId and roomId
+    const groups: { [key: string]: BidRecord[] } = {};
+    justResolved.forEach((bid) => {
+      const key = `${bid.roomId}_${bid.periodId}`;
+      if (!groups[key]) {
+        groups[key] = [];
+      }
+      groups[key].push(bid);
+    });
+
+    // Run sound & visual reactions for each group
+    Object.keys(groups).forEach((key) => {
+      const groupBids = groups[key];
+      const roomId = groupBids[0].roomId;
+      const periodId = groupBids[0].periodId;
+
+      // Check if any of the bids in this group won
+      const winningBids = groupBids.filter((b) => b.status === 'won');
+      const hasWonAny = winningBids.length > 0;
+
+      if (hasWonAny) {
+        const totalWinAmount = winningBids.reduce((acc, b) => acc + (b.winAmount || 0), 0);
+        
+        // Find the period result to present
+        const periodResult = unifiedHistory.find((h) => h.roomId === roomId && h.periodId === periodId) || getDeterministicResult(periodId, roomId);
+        let resultText = 'N/A';
+        if (periodResult) {
+          resultText = `${periodResult.premiumColor} (Number: ${periodResult.number})`;
+        }
+
+        // Play Win Audio
+        playWinSound();
+
+        // Open Win Popup overlay with details
+        setWinPopupDetails({
+          periodId,
+          roomId,
+          totalBidsCount: winningBids.length,
+          totalWinAmount,
+          resultText,
+          gameTypeLabel: roomId === '30s' ? '30 Seconds' : roomId === '1m' ? '1 Minute' : '3 Minutes'
+        });
+      } else {
+        // If all bets in this period lost, only play the Loss Audio, NO popup
+        playLossSound();
+      }
+    });
+  }, [activeBids, user, unifiedHistory]);
+
   // 5. Admin-only subscription: Users list
   useEffect(() => {
     if (user?.role !== 'admin') return;
@@ -832,8 +932,12 @@ export default function App() {
       if (userSnap.exists()) {
         const uProfile = userSnap.val() as UserProfile;
         const newBal = (uProfile.wallet || 0) + depRequest.amount;
+        const newTotalDeposit = (uProfile.totalDeposit || 0) + depRequest.amount;
         
-        let userUpdates: any = { wallet: newBal };
+        let userUpdates: any = { 
+          wallet: newBal,
+          totalDeposit: newTotalDeposit
+        };
         
         // Handle 10% first-deposit commission
         if (!uProfile.hasDeposited) {
@@ -919,6 +1023,15 @@ export default function App() {
         const uProfile = userSnap.val() as UserProfile;
         const newBal = (uProfile.wallet || 0) + withRequest.amount;
         await update(userRef, { wallet: newBal });
+      }
+    } else if (status === 'approved') {
+      const withUserKey = withRequest.userKey || (withRequest.email ? getEmailKey(withRequest.email) : withRequest.phone);
+      const userRef = ref(db, `users/${withUserKey}`);
+      const userSnap = await get(userRef);
+      if (userSnap.exists()) {
+        const uProfile = userSnap.val() as UserProfile;
+        const newTotalWithdrawal = (uProfile.totalWithdrawal || 0) + withRequest.amount;
+        await update(userRef, { totalWithdrawal: newTotalWithdrawal });
       }
     }
   };
@@ -1274,6 +1387,20 @@ export default function App() {
               </div>
             </div>
           </div>
+        )}
+
+        {/* Real-time Game Win Popup Overlay Modal (Auto closes in 5 seconds or on dismiss click) */}
+        {user && winPopupDetails && (
+          <WinPopupModal
+            periodId={winPopupDetails.periodId}
+            roomId={winPopupDetails.roomId}
+            totalBidsCount={winPopupDetails.totalBidsCount}
+            totalWinAmount={winPopupDetails.totalWinAmount}
+            resultText={winPopupDetails.resultText}
+            gameTypeLabel={winPopupDetails.gameTypeLabel}
+            currencySymbol={appConfig.currencySymbol}
+            onClose={() => setWinPopupDetails(null)}
+          />
         )}
 
       </div>

@@ -137,6 +137,11 @@ export default function AdminPanel({
   const [adminReplyText, setAdminReplyText] = useState('');
   const [supportChatFilter, setSupportChatFilter] = useState<'all' | 'unread' | 'blocked'>('all');
   const [supportChatSearch, setSupportChatSearch] = useState('');
+  
+  // Custom Confirmation States for Chat Commands
+  const [confirmingBlock, setConfirmingBlock] = useState(false);
+  const [confirmingClear, setConfirmingClear] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   // User tab specific filters and drill-down state
   const [userFilter, setUserFilter] = useState<'all' | 'online' | 'offline' | 'money' | 'admin'>('all');
@@ -1481,6 +1486,18 @@ export default function AdminPanel({
                           <span className="text-slate-500 uppercase text-[9px] font-black tracking-wider">Last Sync Pulse</span>
                           <span className="text-slate-400 font-sans">
                             {freshUser.lastActive ? new Date(freshUser.lastActive).toLocaleString() : 'No active session recorded'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between pb-1 border-b border-slate-900/60">
+                          <span className="text-slate-500 uppercase text-[9px] font-black tracking-wider">Total Deposit</span>
+                          <span className="text-emerald-400 font-black font-mono">
+                            {appConfig.currencySymbol || '$'}{(freshUser.totalDeposit !== undefined ? freshUser.totalDeposit : totalUserDeposited).toFixed(2)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between pb-1 border-b border-slate-900/60">
+                          <span className="text-slate-500 uppercase text-[9px] font-black tracking-wider">Total Withdrawal</span>
+                          <span className="text-rose-400 font-black font-mono">
+                            {appConfig.currencySymbol || '$'}{(freshUser.totalWithdrawal !== undefined ? freshUser.totalWithdrawal : totalUserWithdrawn).toFixed(2)}
                           </span>
                         </div>
                       </div>
@@ -3475,6 +3492,9 @@ export default function AdminPanel({
                         onClick={() => {
                           setActiveSupportChatKey(chat.userKey);
                           update(ref(db, `support_chats/${chat.userKey}`), { unreadCountForAdmin: 0 });
+                          setConfirmingBlock(false);
+                          setConfirmingClear(false);
+                          setConfirmingDelete(false);
                         }}
                         className={`p-3.5 flex items-start space-x-3 transition-all cursor-pointer select-none border-l-2 relative ${
                           isActive
@@ -3563,49 +3583,122 @@ export default function AdminPanel({
 
                         {/* Top Action controls */}
                         <div className="flex items-center space-x-2">
-                          {/* Block Button */}
-                          <button
-                            onClick={() => {
-                              const confirmText = activeChat?.blocked ? "Turn ON chat for this user?" : "Turn OFF / Disable chat for this user?";
-                              if (confirm(confirmText)) {
-                                update(ref(db, `support_chats/${activeSupportChatKey}`), { blocked: !activeChat?.blocked });
-                              }
-                            }}
-                            className={`px-2.5 py-1.5 rounded-lg border text-[10px] font-bold uppercase cursor-pointer transition-all ${
-                              activeChat?.blocked
-                                ? 'bg-red-500/15 border-red-500/25 text-red-400 hover:bg-red-500/25'
-                                : 'bg-slate-950 border-slate-850 text-slate-400 hover:text-white hover:bg-slate-900'
-                            }`}
-                          >
-                            {activeChat?.blocked ? 'Unblock User' : 'Block Chat'}
-                          </button>
+                          {confirmingBlock ? (
+                            <div className="flex items-center space-x-1.5 bg-red-950/40 border border-red-500/30 p-1 rounded-lg animate-in zoom-in-95 duration-100">
+                              <span className="text-[9px] text-red-400 font-bold px-1.5 uppercase">Are you sure?</span>
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    await update(ref(db, `support_chats/${activeSupportChatKey}`), { blocked: !activeChat?.blocked });
+                                    setConfirmingBlock(false);
+                                  } catch (e) {
+                                    console.error(e);
+                                  }
+                                }}
+                                className="bg-red-500 hover:bg-red-400 text-slate-950 text-[9px] font-black uppercase px-2.5 py-1 rounded cursor-pointer transition-all shrink-0"
+                              >
+                                {activeChat?.blocked ? 'Yes, Unblock' : 'Yes, Block'}
+                              </button>
+                              <button
+                                onClick={() => setConfirmingBlock(false)}
+                                className="bg-slate-800 text-slate-400 hover:text-white text-[9px] font-bold uppercase px-2 py-1 rounded cursor-pointer transition-all shrink-0"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : confirmingClear ? (
+                            <div className="flex items-center space-x-1.5 bg-[#1C0F14] border border-rose-500/30 p-1 rounded-lg animate-in zoom-in-95 duration-100">
+                              <span className="text-[9px] text-rose-400 font-bold px-1.5 uppercase">Clear history?</span>
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    await remove(ref(db, `support_chats/${activeSupportChatKey}/messages`));
+                                    setConfirmingClear(false);
+                                  } catch (e) {
+                                    console.error(e);
+                                  }
+                                }}
+                                className="bg-rose-500 hover:bg-rose-400 text-slate-950 text-[9px] font-black uppercase px-2.5 py-1 rounded cursor-pointer transition-all shrink-0"
+                              >
+                                Clear All
+                              </button>
+                              <button
+                                onClick={() => setConfirmingClear(false)}
+                                className="bg-slate-800 text-slate-400 hover:text-white text-[9px] font-bold uppercase px-2 py-1 rounded cursor-pointer transition-all shrink-0"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : confirmingDelete ? (
+                            <div className="flex items-center space-x-1.5 bg-red-955/40 border border-red-500/30 p-1 rounded-lg animate-in zoom-in-95 duration-100">
+                              <span className="text-[9px] text-red-400 font-bold px-1.5 uppercase">Delete thread?</span>
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    const keyToDelete = activeSupportChatKey;
+                                    setActiveSupportChatKey(null);
+                                    await remove(ref(db, `support_chats/${keyToDelete}`));
+                                    setConfirmingDelete(false);
+                                  } catch (e) {
+                                    console.error(e);
+                                  }
+                                }}
+                                className="bg-red-500 hover:bg-red-400 text-slate-950 text-[9px] font-black uppercase px-2.5 py-1 rounded cursor-pointer transition-all shrink-0"
+                              >
+                                Delete
+                              </button>
+                              <button
+                                onClick={() => setConfirmingDelete(false)}
+                                className="bg-slate-800 text-slate-400 hover:text-white text-[9px] font-bold uppercase px-2 py-1 rounded cursor-pointer transition-all shrink-0"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <>
+                              {/* Block Button */}
+                              <button
+                                onClick={() => {
+                                  setConfirmingBlock(true);
+                                  setConfirmingClear(false);
+                                  setConfirmingDelete(false);
+                                }}
+                                className={`px-2.5 py-1.5 rounded-lg border text-[10px] font-bold uppercase cursor-pointer transition-all shrink-0 ${
+                                  activeChat?.blocked
+                                    ? 'bg-red-500/15 border-red-500/25 text-red-400 hover:bg-red-500/25'
+                                    : 'bg-slate-950 border-slate-850 text-slate-400 hover:text-white hover:bg-slate-900'
+                                }`}
+                              >
+                                {activeChat?.blocked ? 'Unblock User' : 'Block Chat'}
+                              </button>
 
-                          {/* Clear history */}
-                          <button
-                            onClick={() => {
-                              if (confirm(`Clear all messages in conversation for ${activeChat?.email}?`)) {
-                                remove(ref(db, `support_chats/${activeSupportChatKey}/messages`));
-                              }
-                            }}
-                            className="p-1.5 rounded-lg border border-slate-850 text-slate-500 hover:text-rose-400 hover:bg-slate-900 bg-slate-950 cursor-pointer"
-                            title="Clear conversation history"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                              {/* Clear history */}
+                              <button
+                                onClick={() => {
+                                  setConfirmingClear(true);
+                                  setConfirmingBlock(false);
+                                  setConfirmingDelete(false);
+                                }}
+                                className="p-1.5 rounded-lg border border-slate-850 text-slate-500 hover:text-rose-400 hover:bg-slate-900 bg-slate-950 cursor-pointer shrink-0"
+                                title="Clear conversation history"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
 
-                          {/* Delete completely */}
-                          <button
-                            onClick={() => {
-                              if (confirm(`Delete the entire support chat object from firebase for ${activeChat?.email}?`)) {
-                                setActiveSupportChatKey(null);
-                                remove(ref(db, `support_chats/${activeSupportChatKey}`));
-                              }
-                            }}
-                            className="p-1.5 rounded-lg border border-red-500/10 text-red-500 hover:text-white hover:bg-red-500 bg-slate-950 cursor-pointer"
-                            title="Delete thread object"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
+                              {/* Delete completely */}
+                              <button
+                                onClick={() => {
+                                  setConfirmingDelete(true);
+                                  setConfirmingBlock(false);
+                                  setConfirmingClear(false);
+                                }}
+                                className="p-1.5 rounded-lg border border-red-500/10 text-red-500 hover:text-white hover:bg-red-500 bg-slate-950 cursor-pointer shrink-0"
+                                title="Delete thread object"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </>
+                          )}
                         </div>
                       </div>
 

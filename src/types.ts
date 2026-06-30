@@ -16,6 +16,8 @@ export interface UserProfile {
   createdAt: number;
   interestEarned?: number;
   lastActive?: number;
+  totalDeposit?: number;
+  totalWithdrawal?: number;
 }
 
 export interface ReferralCommissionLog {
