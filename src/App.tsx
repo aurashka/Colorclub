@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from './firebase';
-import { ref, onValue, set, get, update, remove } from 'firebase/database';
+import { ref, onValue, set, get, update, remove, query, limitToLast } from 'firebase/database';
 import { RoomType, UserProfile, GamePeriod, BidRecord, DepositRequest, WithdrawalRequest, DepositChannel, DepositChannelField, WithdrawalField, AppConfig } from './types';
 import { getPeriodDetails, generatePeriodResult, calculateBidResult, getRecentPeriodIds, getDeterministicResult, getDeterministicNumber } from './utils/gameUtils';
 import { WinPopupModal } from './components/WinPopupModal';
@@ -246,56 +246,38 @@ export default function App() {
 
   // 3. Real-time subscriber for general database records
   useEffect(() => {
-    // History
-    const historyRef = ref(db, 'history');
-    const unsubscribeHistory = onValue(historyRef, (snap) => {
-      if (snap.exists()) {
-        const data = snap.val();
+    // Optimized: History per room limited to last 40 entries to keep data recall tiny and fast
+    const rooms: RoomType[] = ['30s', '1m', '3m'];
+    const roomHistoryData: { [room: string]: GamePeriod[] } = {
+      '30s': [],
+      '1m': [],
+      '3m': []
+    };
+
+    const unsubscribes = rooms.map((roomKey) => {
+      const roomHistoryQuery = query(ref(db, `history/${roomKey}`), limitToLast(40));
+      return onValue(roomHistoryQuery, (snap) => {
         const list: GamePeriod[] = [];
-        Object.keys(data).forEach((roomKey) => {
-          const roomObj = data[roomKey];
-          Object.keys(roomObj).forEach((pKey) => {
+        if (snap.exists()) {
+          const data = snap.val();
+          Object.keys(data).forEach((pKey) => {
             list.push({
               periodId: pKey,
-              roomId: roomKey as RoomType,
-              ...roomObj[pKey],
+              roomId: roomKey,
+              ...data[pKey]
             });
           });
-        });
-        setHistory(list);
-      } else {
-        setHistory([]);
-      }
-    });
+        }
+        roomHistoryData[roomKey] = list;
 
-    // Deposits
-    const depositsRef = ref(db, 'deposits');
-    const unsubscribeDeposits = onValue(depositsRef, (snap) => {
-      if (snap.exists()) {
-        const data = snap.val();
-        const list = Object.keys(data).map((key) => ({
-          depositId: key,
-          ...data[key],
-        })) as DepositRequest[];
-        setDeposits(list);
-      } else {
-        setDeposits([]);
-      }
-    });
-
-    // Withdrawals
-    const withdrawalsRef = ref(db, 'withdrawals');
-    const unsubscribeWithdrawals = onValue(withdrawalsRef, (snap) => {
-      if (snap.exists()) {
-        const data = snap.val();
-        const list = Object.keys(data).map((key) => ({
-          withdrawalId: key,
-          ...data[key],
-        })) as WithdrawalRequest[];
-        setWithdrawals(list);
-      } else {
-        setWithdrawals([]);
-      }
+        // Combine all rooms' history together
+        const combined = [
+          ...roomHistoryData['30s'],
+          ...roomHistoryData['1m'],
+          ...roomHistoryData['3m']
+        ];
+        setHistory(combined);
+      });
     });
 
     // Overrides
@@ -430,9 +412,7 @@ export default function App() {
     });
 
     return () => {
-      unsubscribeHistory();
-      unsubscribeDeposits();
-      unsubscribeWithdrawals();
+      unsubscribes.forEach((unsub) => unsub());
       unsubscribeOverrides();
       unsubscribePresets();
       unsubscribeGateway();
@@ -441,40 +421,132 @@ export default function App() {
     };
   }, []);
 
-  // 4. Subscriber for All Bids in the database
+  // 4. Real-time subscriber for Bids, Deposits, and Withdrawals - Isolated per user or global for Admin
   useEffect(() => {
-    const bidsRef = ref(db, 'bids');
-    const unsubscribeBids = onValue(bidsRef, (snap) => {
-      if (snap.exists()) {
-        const data = snap.val();
-        const list: BidRecord[] = [];
-        // Data format: /bids/{roomId}/{periodId}/{userId}/{bidId}
-        Object.keys(data).forEach((roomKey) => {
-          const roomObj = data[roomKey];
-          Object.keys(roomObj).forEach((pKey) => {
-            const periodObj = roomObj[pKey];
-            Object.keys(periodObj).forEach((uKey) => {
-              const userObj = periodObj[uKey];
-              Object.keys(userObj).forEach((bKey) => {
-                list.push({
-                  bidId: bKey,
-                  roomId: roomKey as RoomType,
-                  periodId: pKey,
-                  userId: uKey,
-                  ...userObj[bKey],
+    if (!user) {
+      setActiveBids([]);
+      setDeposits([]);
+      setWithdrawals([]);
+      return;
+    }
+
+    let unsubscribeBids: () => void = () => {};
+    let unsubscribeDeposits: () => void = () => {};
+    let unsubscribeWithdrawals: () => void = () => {};
+
+    if (user.role === 'admin') {
+      // Admin: Subscribe to all records globally
+      const bidsRef = ref(db, 'bids');
+      unsubscribeBids = onValue(bidsRef, (snap) => {
+        if (snap.exists()) {
+          const data = snap.val();
+          const list: BidRecord[] = [];
+          Object.keys(data).forEach((roomKey) => {
+            const roomObj = data[roomKey];
+            Object.keys(roomObj).forEach((pKey) => {
+              const periodObj = roomObj[pKey];
+              Object.keys(periodObj).forEach((uKey) => {
+                const userObj = periodObj[uKey];
+                Object.keys(userObj).forEach((bKey) => {
+                  list.push({
+                    bidId: bKey,
+                    roomId: roomKey as RoomType,
+                    periodId: pKey,
+                    userId: uKey,
+                    ...userObj[bKey],
+                  });
                 });
               });
             });
           });
-        });
-        setActiveBids(list);
-      } else {
-        setActiveBids([]);
-      }
-    });
+          setActiveBids(list);
+        } else {
+          setActiveBids([]);
+        }
+      });
 
-    return () => unsubscribeBids();
-  }, []);
+      const depositsRef = ref(db, 'deposits');
+      unsubscribeDeposits = onValue(depositsRef, (snap) => {
+        if (snap.exists()) {
+          const data = snap.val();
+          const list = Object.keys(data).map((key) => ({
+            depositId: key,
+            ...data[key],
+          })) as DepositRequest[];
+          setDeposits(list);
+        } else {
+          setDeposits([]);
+        }
+      });
+
+      const withdrawalsRef = ref(db, 'withdrawals');
+      unsubscribeWithdrawals = onValue(withdrawalsRef, (snap) => {
+        if (snap.exists()) {
+          const data = snap.val();
+          const list = Object.keys(data).map((key) => ({
+            withdrawalId: key,
+            ...data[key],
+          })) as WithdrawalRequest[];
+          setWithdrawals(list);
+        } else {
+          setWithdrawals([]);
+        }
+      });
+
+    } else {
+      // Normal User: Subscribe strictly to their own isolated data path in Firebase (No other users' data is fetched)
+      const userBidsRef = ref(db, `user_bids/${user.uid}`);
+      unsubscribeBids = onValue(userBidsRef, (snap) => {
+        if (snap.exists()) {
+          const data = snap.val();
+          const list: BidRecord[] = [];
+          Object.keys(data).forEach((bKey) => {
+            list.push({
+              bidId: bKey,
+              ...data[bKey],
+            });
+          });
+          setActiveBids(list);
+        } else {
+          setActiveBids([]);
+        }
+      });
+
+      const userDepositsRef = ref(db, `user_deposits/${user.uid}`);
+      unsubscribeDeposits = onValue(userDepositsRef, (snap) => {
+        if (snap.exists()) {
+          const data = snap.val();
+          const list = Object.keys(data).map((key) => ({
+            depositId: key,
+            ...data[key],
+          })) as DepositRequest[];
+          setDeposits(list);
+        } else {
+          setDeposits([]);
+        }
+      });
+
+      const userWithdrawalsRef = ref(db, `user_withdrawals/${user.uid}`);
+      unsubscribeWithdrawals = onValue(userWithdrawalsRef, (snap) => {
+        if (snap.exists()) {
+          const data = snap.val();
+          const list = Object.keys(data).map((key) => ({
+            withdrawalId: key,
+            ...data[key],
+          })) as WithdrawalRequest[];
+          setWithdrawals(list);
+        } else {
+          setWithdrawals([]);
+        }
+      });
+    }
+
+    return () => {
+      unsubscribeBids();
+      unsubscribeDeposits();
+      unsubscribeWithdrawals();
+    };
+  }, [user?.uid, user?.role]);
 
   // Synchronize previously completed bids to avoid popups on page load/login
   useEffect(() => {
@@ -689,11 +761,13 @@ export default function App() {
             if (bid.status === 'pending') {
               const { status, winAmount } = calculateBidResult(bid.selection, bid.amount, winningNum);
               
-              // Update bid status
-              await update(ref(db, `${bidsPath}/${uid}/${bidId}`), {
+              // Update bid status globally and in user-isolated path
+              const bidStatusUpdates = {
                 status,
                 winAmount
-              });
+              };
+              await update(ref(db, `${bidsPath}/${uid}/${bidId}`), bidStatusUpdates);
+              await update(ref(db, `user_bids/${uid}/${bidId}`), bidStatusUpdates);
 
               // Credit winnings back to user balance in realtime
               if (status === 'won' && winAmount > 0) {
@@ -805,7 +879,11 @@ export default function App() {
     const bidId = `bid_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     const bidRecordRef = ref(db, `bids/${roomId}/${currentDetails.periodId}/${user.uid}/${bidId}`);
     
-    const record: Partial<BidRecord> = {
+    const record: any = {
+      bidId,
+      roomId,
+      periodId: currentDetails.periodId,
+      userId: user.uid,
       phone: user.phone || '',
       email: user.email || '',
       nickname: user.nickname,
@@ -817,6 +895,10 @@ export default function App() {
     };
     
     await set(bidRecordRef, record);
+
+    // Also save in user-specific bids path for super fast, lightweight and secure query isolation
+    const userBidRef = ref(db, `user_bids/${user.uid}/${bidId}`);
+    await set(userBidRef, record);
   };
 
   // Wallet operations: Deposits Claims
@@ -842,6 +924,10 @@ export default function App() {
       updatedAt: Date.now()
     };
     await set(depositRef, request);
+
+    // Also save in user-specific deposits path for isolated recall
+    const userDepositRef = ref(db, `user_deposits/${user.uid}/${depositId}`);
+    await set(userDepositRef, request);
   };
 
   // Wallet operations: Withdrawals Requests
@@ -893,6 +979,10 @@ export default function App() {
     };
 
     await set(withdrawalRef, request);
+
+    // Also save in user-specific withdrawals path for clean and secure isolation
+    const userWithdrawalRef = ref(db, `user_withdrawals/${user.uid}/${withdrawalId}`);
+    await set(userWithdrawalRef, request);
   };
 
   // Admin Ledger operations: Adjust wallet balance directly
@@ -917,12 +1007,17 @@ export default function App() {
 
     if (depRequest.status === 'approved') return; // already approved
 
-    // Update state
-    await update(depositRef, {
+    // Update state globally and in user-specific path
+    const updates = {
       status,
       holdReason: holdReason || null,
       updatedAt: Date.now()
-    });
+    };
+    await update(depositRef, updates);
+
+    if (depRequest.userId) {
+      await update(ref(db, `user_deposits/${depRequest.userId}/${depositId}`), updates);
+    }
 
     // If approved, add money to user's wallet
     if (status === 'approved') {
@@ -1007,12 +1102,17 @@ export default function App() {
 
     if (withRequest.status === 'approved') return; // already processed
 
-    // Update state
-    await update(withdrawalRef, {
+    // Update state globally and in user-specific path
+    const updates = {
       status,
       holdReason: holdReason || null,
       updatedAt: Date.now()
-    });
+    };
+    await update(withdrawalRef, updates);
+
+    if (withRequest.userId) {
+      await update(ref(db, `user_withdrawals/${withRequest.userId}/${withdrawalId}`), updates);
+    }
 
     // If rejected, return held funds to user's wallet
     if (status === 'rejected') {
@@ -1089,6 +1189,10 @@ export default function App() {
 
   const userRoomBids = user ? activeBids.filter(
     (b) => b.userId === user.uid && b.roomId === roomId
+  ) : [];
+
+  const userBidsAllRooms = user ? activeBids.filter(
+    (b) => b.userId === user.uid
   ) : [];
 
   return (
@@ -1205,7 +1309,7 @@ export default function App() {
                   totalDuration={periodDetails.totalDuration}
                   user={user}
                   activeBids={userActiveBids}
-                  userAllBids={userRoomBids}
+                  userAllBids={userBidsAllRooms}
                   history={unifiedHistory}
                   onPlaceBid={handlePlaceBid}
                   onNavigateToWallet={(subTab) => {

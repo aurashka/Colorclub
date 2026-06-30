@@ -54,9 +54,11 @@ export default function GameSection({
   const [expandedBidId, setExpandedBidId] = useState<string | null>(null);
   const [termsAccepted, setTermsAccepted] = useState<boolean>(true);
   const [copiedBidId, setCopiedBidId] = useState<string | null>(null);
+  const [myBidsPage, setMyBidsPage] = useState<number>(1);
+  const [myBidsFilter, setMyBidsFilter] = useState<'all' | '30s' | '1m' | '3m'>('all');
 
-  const findPeriodResult = (pId: string) => {
-    return history.find((h) => h.periodId === pId && h.roomId === roomId);
+  const findPeriodResult = (pId: string, rId: string) => {
+    return history.find((h) => h.periodId === pId && h.roomId === rId);
   };
 
   const handleSelection = (sel: string) => {
@@ -734,182 +736,240 @@ export default function GameSection({
         )}
 
         {/* Tab content: My History (Durable expandable stakes / play records) */}
-        {bottomTab === 'myHistory' && (
-          <div className="space-y-2 max-h-[350px] overflow-y-auto pr-0.5 scrollbar-thin">
-            {[...userAllBids].sort((a, b) => b.createdAt - a.createdAt).map((b) => {
-              const isExpanded = expandedBidId === b.bidId;
-              const periodResult = findPeriodResult(b.periodId);
-              
-              // Formatting outcome rewards
-              const isWon = b.status === 'won';
-              const isPending = b.status === 'pending';
-              const rewardClass = isWon ? 'text-emerald-500' : 'text-rose-500';
-              const rewardPrefix = isWon ? '+' : '-';
-              const rewardFormatted = isPending 
-                ? 'Pending' 
-                : `${rewardPrefix}${appConfig.currencySymbol}${isWon ? b.winAmount.toFixed(2) : b.amount.toFixed(2)}`;
+        {bottomTab === 'myHistory' && (() => {
+          const filteredBids = myBidsFilter === 'all'
+            ? userAllBids
+            : userAllBids.filter((b) => b.roomId === myBidsFilter);
 
-              return (
-                <div 
-                  key={b.bidId} 
-                  className={`border rounded-2xl bg-[#181716]/60 transition-all overflow-hidden ${
-                    isExpanded 
-                      ? 'border-[#E2B354]/45 shadow-lg shadow-[#E2B354]/5 bg-[#1a1918]' 
-                      : 'border-[#3D2C08]/10 hover:border-[#E2B354]/25'
-                  }`}
-                >
-                  {/* Collapsed Header / Tappable row */}
-                  <div 
-                    onClick={() => setExpandedBidId(isExpanded ? null : b.bidId)}
-                    className="p-3 flex items-center justify-between cursor-pointer select-none text-[10px]"
+          const sortedBids = [...filteredBids].sort((a, b) => b.createdAt - a.createdAt);
+          const bidsPerPage = 10;
+          const totalBids = sortedBids.length;
+          const totalPages = Math.ceil(totalBids / bidsPerPage) || 1;
+          const startIndex = (myBidsPage - 1) * bidsPerPage;
+          const paginatedBids = sortedBids.slice(startIndex, startIndex + bidsPerPage);
+
+          return (
+            <div className="space-y-3">
+              {/* Filter Row: All, 30s, 1m, 3m */}
+              <div className="flex p-0.5 bg-[#141211] rounded-xl border border-[#3D2C08]/10 text-[9px] font-bold font-mono">
+                {(['all', '30s', '1m', '3m'] as const).map((filterOpt) => (
+                  <button
+                    key={filterOpt}
+                    onClick={() => {
+                      setMyBidsFilter(filterOpt);
+                      setMyBidsPage(1);
+                    }}
+                    className={`flex-1 py-1.5 rounded-lg uppercase transition-all duration-150 cursor-pointer ${
+                      myBidsFilter === filterOpt
+                        ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                        : 'text-slate-500 hover:text-slate-300 border border-transparent'
+                    }`}
                   >
-                    <div className="space-y-0.5">
-                      <span className="font-mono text-[9px] text-[#E5A93B] font-black tracking-wider flex items-center space-x-1.5">
-                        <span>{b.periodId}</span>
-                        <span className="bg-[#FFE194]/15 text-[#E5A93B] text-[7.5px] font-black px-1.5 py-0.5 rounded border border-[#E5A93B]/20 uppercase">
-                          {b.roomId}
-                        </span>
-                      </span>
-                      <div className="flex items-center space-x-1.5 text-slate-500 text-[8px] font-bold">
-                        <Calendar className="h-2.5 w-2.5" />
-                        <span>
-                          {new Date(b.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                      </div>
-                    </div>
+                    {filterOpt === 'all' ? 'All' : filterOpt}
+                  </button>
+                ))}
+              </div>
 
-                    <div className="flex items-center space-x-4">
-                      <div className="text-right">
-                        <span className="font-mono font-black text-slate-200 block">{appConfig.currencySymbol}{b.amount.toFixed(2)}</span>
-                        <span className={`text-[9px] font-black tracking-wide block ${
-                          isPending 
-                            ? 'text-amber-500 animate-pulse' 
-                            : rewardClass
-                        }`}>
-                          {rewardFormatted}
-                        </span>
+              <div className="space-y-2 max-h-[300px] overflow-y-auto pr-0.5 scrollbar-thin">
+                {paginatedBids.map((b) => {
+                  const isExpanded = expandedBidId === b.bidId;
+                  const periodResult = findPeriodResult(b.periodId, b.roomId);
+                  
+                  // Formatting outcome rewards
+                  const isWon = b.status === 'won';
+                  const isPending = b.status === 'pending';
+                  const rewardClass = isWon ? 'text-emerald-500' : 'text-rose-500';
+                  const rewardPrefix = isWon ? '+' : '-';
+                  const rewardFormatted = isPending 
+                    ? 'Pending' 
+                    : `${rewardPrefix}${appConfig.currencySymbol}${isWon ? b.winAmount.toFixed(2) : b.amount.toFixed(2)}`;
+
+                  return (
+                    <div 
+                      key={b.bidId} 
+                      className={`border rounded-2xl bg-[#181716]/60 transition-all overflow-hidden ${
+                        isExpanded 
+                          ? 'border-[#E2B354]/45 shadow-lg shadow-[#E2B354]/5 bg-[#1a1918]' 
+                          : 'border-[#3D2C08]/10 hover:border-[#E2B354]/25'
+                      }`}
+                    >
+                      {/* Collapsed Header / Tappable row */}
+                      <div 
+                        onClick={() => setExpandedBidId(isExpanded ? null : b.bidId)}
+                        className="p-3 flex items-center justify-between cursor-pointer select-none text-[10px]"
+                      >
+                        <div className="space-y-0.5">
+                          <span className="font-mono text-[9px] text-[#E5A93B] font-black tracking-wider flex items-center space-x-1.5">
+                            <span>{b.periodId}</span>
+                            <span className="bg-[#FFE194]/15 text-[#E5A93B] text-[7.5px] font-black px-1.5 py-0.5 rounded border border-[#E5A93B]/20 uppercase">
+                              {b.roomId}
+                            </span>
+                          </span>
+                          <div className="flex items-center space-x-1.5 text-slate-500 text-[8px] font-bold">
+                            <Calendar className="h-2.5 w-2.5" />
+                            <span>
+                              {new Date(b.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center space-x-4">
+                          <div className="text-right">
+                            <span className="font-mono font-black text-slate-200 block">{appConfig.currencySymbol}{b.amount.toFixed(2)}</span>
+                            <span className={`text-[9px] font-black tracking-wide block ${
+                              isPending 
+                                ? 'text-amber-500 animate-pulse' 
+                                : rewardClass
+                            }`}>
+                              {rewardFormatted}
+                            </span>
+                          </div>
+
+                          <div className="text-[#E5A93B]">
+                            {isExpanded ? (
+                              <ChevronUp className="h-4 w-4" />
+                            ) : (
+                              <ChevronDown className="h-4 w-4" />
+                            )}
+                          </div>
+                        </div>
                       </div>
 
-                      <div className="text-[#E5A93B]">
-                        {isExpanded ? (
-                          <ChevronUp className="h-4 w-4" />
-                        ) : (
-                          <ChevronDown className="h-4 w-4" />
-                        )}
-                      </div>
-                    </div>
-                  </div>
+                      {/* Expanded Detailed Sheet */}
+                      {isExpanded && (
+                        <div className="px-4.5 pb-4.5 pt-1.5 border-t border-[#3D2C08]/10 bg-black/35 text-[9px] space-y-3 animate-in slide-in-from-top-1 duration-150">
+                          
+                          {/* Grid Breakdown */}
+                          <div className="grid grid-cols-2 gap-4 text-slate-400">
+                            <div className="space-y-1.5">
+                              <div>
+                                <span className="text-[7px] font-bold text-slate-500 uppercase tracking-widest block">Staked Selection</span>
+                                <div className="flex items-center space-x-1.5 mt-0.5">
+                                  <span className={`px-2 py-0.5 rounded-md font-black text-[8px] uppercase tracking-wider ${
+                                    getSelectionTheme(b.selection).bg
+                                  } text-white`}>
+                                    {b.selection}
+                                  </span>
+                                </div>
+                              </div>
 
-                  {/* Expanded Detailed Sheet */}
-                  {isExpanded && (
-                    <div className="px-4.5 pb-4.5 pt-1.5 border-t border-[#3D2C08]/10 bg-black/35 text-[9px] space-y-3 animate-in slide-in-from-top-1 duration-150">
-                      
-                      {/* Grid Breakdown */}
-                      <div className="grid grid-cols-2 gap-4 text-slate-400">
-                        <div className="space-y-1.5">
-                          <div>
-                            <span className="text-[7px] font-bold text-slate-500 uppercase tracking-widest block">Staked Selection</span>
-                            <div className="flex items-center space-x-1.5 mt-0.5">
-                              <span className={`px-2 py-0.5 rounded-md font-black text-[8px] uppercase tracking-wider ${
-                                getSelectionTheme(b.selection).bg
-                              } text-white`}>
-                                {b.selection}
-                              </span>
+                              <div>
+                                <span className="text-[7px] font-bold text-slate-500 uppercase tracking-widest block font-mono">Contract calculation</span>
+                                <span className="font-mono text-slate-300">
+                                  {appConfig.currencySymbol}{(b.amount / multiplier).toFixed(2)} x {multiplier} = {appConfig.currencySymbol}{b.amount.toFixed(2)}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="space-y-1.5 text-right">
+                              <div>
+                                <span className="text-[7px] font-bold text-slate-500 uppercase tracking-widest block">Draw Outcome</span>
+                                {periodResult ? (
+                                  <div className="flex items-center justify-end space-x-1 mt-0.5">
+                                    <span className={`h-4.5 w-4.5 rounded-full font-black flex items-center justify-center text-white text-[8px] ${
+                                      periodResult.number === 0 ? 'bg-gradient-to-r from-red-500 to-violet-600' :
+                                      periodResult.number === 5 ? 'bg-gradient-to-r from-emerald-500 to-violet-600' :
+                                      [1,3,7,9].includes(periodResult.number) ? 'bg-emerald-600' : 'bg-rose-600'
+                                    }`}>
+                                      {periodResult.number}
+                                    </span>
+                                    <span className="font-black text-slate-300 text-[8px] uppercase tracking-wide">
+                                      {periodResult.premiumColor}
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <span className="text-amber-500 font-extrabold animate-pulse block mt-0.5">Waiting Draw...</span>
+                                )}
+                              </div>
+
+                              <div>
+                                <span className="text-[7px] font-bold text-slate-500 uppercase tracking-widest block">Fee (Platform Tax)</span>
+                                <span className="font-mono text-slate-400">
+                                  {appConfig.currencySymbol}{(b.amount * 0.02).toFixed(2)} (2%)
+                                </span>
+                              </div>
                             </div>
                           </div>
 
-                          <div>
-                            <span className="text-[7px] font-bold text-slate-500 uppercase tracking-widest block font-mono">Contract calculation</span>
-                            <span className="font-mono text-slate-300">
-                              {appConfig.currencySymbol}{(b.amount / multiplier).toFixed(2)} x {multiplier} = {appConfig.currencySymbol}{b.amount.toFixed(2)}
+                          {/* Transaction Copy Bar */}
+                          <div className="bg-[#181716]/40 p-2.5 rounded-xl border border-[#3D2C08]/10 flex justify-between items-center text-slate-400">
+                            <div className="truncate pr-4">
+                              <span className="text-[7px] font-bold text-slate-500 uppercase tracking-wider block leading-none">ORDER ID</span>
+                              <span className="font-mono text-[8px] tracking-wide text-slate-300 select-all">{b.bidId}</span>
+                            </div>
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigator.clipboard.writeText(b.bidId);
+                                setCopiedBidId(b.bidId);
+                                setTimeout(() => setCopiedBidId(null), 1500);
+                              }}
+                              className="p-1 bg-black rounded-lg hover:bg-[#181716] text-[#E5A93B] shrink-0 active:scale-95 transition-transform"
+                              title="Copy Order ID"
+                            >
+                              {copiedBidId === b.bidId ? (
+                                <Check className="h-3 w-3 text-emerald-400" />
+                              ) : (
+                                <Copy className="h-3 w-3" />
+                              )}
+                            </button>
+                          </div>
+
+                          {/* Financial Settle Outcome Summary */}
+                          <div className="bg-black/20 p-2 rounded-xl flex justify-between items-center text-[10px] border border-dashed border-[#3D2C08]/15">
+                            <span className="text-slate-400 font-bold">Payout Yield</span>
+                            <span className={`font-mono font-black ${
+                              isPending ? 'text-amber-500' : isWon ? 'text-[#10B981]' : 'text-[#EF4444]'
+                            }`}>
+                              {isPending 
+                                ? 'Awaiting block settlement' 
+                                : isWon 
+                                  ? `+ ${appConfig.currencySymbol}${b.winAmount.toFixed(2)} (Won!)` 
+                                  : `- ${appConfig.currencySymbol}${b.amount.toFixed(2)} (Lost)`
+                              }
                             </span>
                           </div>
+
                         </div>
-
-                        <div className="space-y-1.5 text-right">
-                          <div>
-                            <span className="text-[7px] font-bold text-slate-500 uppercase tracking-widest block">Draw Outcome</span>
-                            {periodResult ? (
-                              <div className="flex items-center justify-end space-x-1 mt-0.5">
-                                <span className={`h-4.5 w-4.5 rounded-full font-black flex items-center justify-center text-white text-[8px] ${
-                                  periodResult.number === 0 ? 'bg-gradient-to-r from-red-500 to-violet-600' :
-                                  periodResult.number === 5 ? 'bg-gradient-to-r from-emerald-500 to-violet-600' :
-                                  [1,3,7,9].includes(periodResult.number) ? 'bg-emerald-600' : 'bg-rose-600'
-                                }`}>
-                                  {periodResult.number}
-                                </span>
-                                <span className="font-black text-slate-300 text-[8px] uppercase tracking-wide">
-                                  {periodResult.premiumColor}
-                                </span>
-                              </div>
-                            ) : (
-                              <span className="text-amber-500 font-extrabold animate-pulse block mt-0.5">Waiting Draw...</span>
-                            )}
-                          </div>
-
-                          <div>
-                            <span className="text-[7px] font-bold text-slate-500 uppercase tracking-widest block">Fee (Platform Tax)</span>
-                            <span className="font-mono text-slate-400">
-                              {appConfig.currencySymbol}{(b.amount * 0.02).toFixed(2)} (2%)
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Transaction Copy Bar */}
-                      <div className="bg-[#181716]/40 p-2.5 rounded-xl border border-[#3D2C08]/10 flex justify-between items-center text-slate-400">
-                        <div className="truncate pr-4">
-                          <span className="text-[7px] font-bold text-slate-500 uppercase tracking-wider block leading-none">ORDER ID</span>
-                          <span className="font-mono text-[8px] tracking-wide text-slate-300 select-all">{b.bidId}</span>
-                        </div>
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            navigator.clipboard.writeText(b.bidId);
-                            setCopiedBidId(b.bidId);
-                            setTimeout(() => setCopiedBidId(null), 1500);
-                          }}
-                          className="p-1 bg-black rounded-lg hover:bg-[#181716] text-[#E5A93B] shrink-0 active:scale-95 transition-transform"
-                          title="Copy Order ID"
-                        >
-                          {copiedBidId === b.bidId ? (
-                            <Check className="h-3 w-3 text-emerald-400" />
-                          ) : (
-                            <Copy className="h-3 w-3" />
-                          )}
-                        </button>
-                      </div>
-
-                      {/* Financial Settle Outcome Summary */}
-                      <div className="bg-black/20 p-2 rounded-xl flex justify-between items-center text-[10px] border border-dashed border-[#3D2C08]/15">
-                        <span className="text-slate-400 font-bold">Payout Yield</span>
-                        <span className={`font-mono font-black ${
-                          isPending ? 'text-amber-500' : isWon ? 'text-emerald-500' : 'text-rose-500'
-                        }`}>
-                          {isPending 
-                            ? 'Awaiting block settlement' 
-                            : isWon 
-                              ? `+ ${appConfig.currencySymbol}${b.winAmount.toFixed(2)} (Won!)` 
-                              : `- ${appConfig.currencySymbol}${b.amount.toFixed(2)} (Lost)`
-                          }
-                        </span>
-                      </div>
-
+                      )}
                     </div>
-                  )}
-                </div>
-              );
-            })}
+                  );
+                })}
 
-            {userAllBids.length === 0 && (
-              <div className="bg-[#181716]/30 border border-dashed border-[#3D2C08]/10 rounded-2xl p-8 text-center text-slate-500">
-                <FileText className="h-8 w-8 text-slate-600 mx-auto mb-2 opacity-50" />
-                <p className="font-bold text-[10px]">No play logs found</p>
-                <p className="text-[9px] text-slate-600 mt-0.5">Your prediction stakes will display here!</p>
+                {totalBids === 0 && (
+                  <div className="bg-[#181716]/30 border border-dashed border-[#3D2C08]/10 rounded-2xl p-8 text-center text-slate-500">
+                    <FileText className="h-8 w-8 text-slate-600 mx-auto mb-2 opacity-50" />
+                    <p className="font-bold text-[10px]">No play logs found</p>
+                    <p className="text-[9px] text-slate-600 mt-0.5">Your prediction stakes will display here!</p>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-        )}
+
+              {/* Pagination Controls */}
+              {totalBids > bidsPerPage && (
+                <div className="flex items-center justify-between px-3 py-2 bg-[#181716]/60 border border-[#3D2C08]/10 rounded-xl mt-3 text-[10px]">
+                  <button
+                    disabled={myBidsPage === 1}
+                    onClick={() => setMyBidsPage(prev => Math.max(1, prev - 1))}
+                    className="px-3 py-1.5 rounded-lg font-black text-[#E5A93B] bg-amber-500/10 hover:bg-amber-500/20 disabled:opacity-40 disabled:hover:bg-amber-500/10 active:scale-95 transition-all cursor-pointer"
+                  >
+                    Previous
+                  </button>
+                  <span className="text-slate-400 font-bold">
+                    Page {myBidsPage} of {totalPages}
+                  </span>
+                  <button
+                    disabled={myBidsPage >= totalPages}
+                    onClick={() => setMyBidsPage(prev => Math.min(totalPages, prev + 1))}
+                    className="px-3 py-1.5 rounded-lg font-black text-[#E5A93B] bg-amber-500/10 hover:bg-amber-500/20 disabled:opacity-40 disabled:hover:bg-amber-500/10 active:scale-95 transition-all cursor-pointer"
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
     </div>
